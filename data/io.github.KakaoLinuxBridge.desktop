@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=KakaoTalk
+Comment=Run official KakaoTalk with Kakao Linux Bridge
+Exec=kakao-linux-bridge start
+TryExec=kakao-linux-bridge
+Icon=io.github.KakaoLinuxBridge
+Terminal=false
+Categories=Network;InstantMessaging;
+Actions=Settings;Quit;
+
+[Desktop Action Settings]
+Name=Bridge Settings
+Exec=kakao-linux-bridge-settings
+
+[Desktop Action Quit]
+Name=Quit KakaoTalk
+Exec=kakao-linux-bridge stop
