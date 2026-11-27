@@ -7,7 +7,7 @@
 Ubuntu 24.04 LTS amd64를 대상으로 합니다. 설치 전에 다른 카카오톡 인스턴스를 종료하세요.
 
 ```sh
-sudo apt install ./kakao-linux-bridge_0.6.1_amd64.deb
+sudo apt install ./kakao-linux-bridge_0.7.0_amd64.deb
 ```
 
 앱 목록에서 **KakaoTalk (Bridge)**를 실행합니다. Bridge는 PATH의 Wine, 환경 변수 `WINEPREFIX`, Bridge 전용 prefix 및 기본 `~/.wine`에서 환경을 찾습니다. 설정 창에서 실행 파일과 경로를 지정할 수 있습니다. 카카오톡이 없으면 **Install KakaoTalk…**에서 공식 배포처로부터 받은 로컬 설치 파일을 선택하세요. 사용자 지정 또는 기존 prefix를 사용하는 경우 전용 prefix에 설치하려면 설정의 prefix 경로를 전용 prefix로 지정하세요. `doctor`로 탐지 결과를 확인할 수 있습니다.
@@ -20,7 +20,7 @@ kakao-linux-bridge status
 kakao-linux-bridge stop
 ```
 
-`stop`은 동일 Wine prefix의 카카오톡에 정상 종료를 요청합니다. 다른 Windows 프로그램과 동시에 사용하는 경우 그 프로그램은 계속 실행됩니다. 트레이는 StatusNotifierItem 호스트가 있는 환경에서 표시되며 기본 클릭은 설정을 엽니다. 트레이가 없는 GNOME 환경에서는 앱 목록의 설정 및 종료 메뉴를 사용하세요. Bridge의 **KakaoTalk (Bridge)** 트레이 아이콘에는 GNOME이 아이콘 위치에 직접 그리는 메뉴가 있습니다. Wine 자체 트레이 아이콘도 사용하는 환경에서는 두 아이콘이 보일 수 있습니다. `kakao-linux-bridge start`는 카카오톡을 실행하고, 설정은 `kakao-linux-bridge settings`로 엽니다. 알림 배너의 위치는 데스크톱 알림 서비스가 결정합니다.
+`stop`은 동일 Wine prefix의 카카오톡에 정상 종료를 요청합니다. 다른 Windows 프로그램과 동시에 사용하는 경우 그 프로그램은 계속 실행됩니다. 트레이는 StatusNotifierItem 호스트가 있는 환경에서 표시되며 기본 클릭은 설정을 엽니다. 트레이가 없는 GNOME 환경에서는 앱 목록의 설정 및 종료 메뉴를 사용하세요. Bridge의 **KakaoTalk (Bridge)** 트레이 아이콘에는 GNOME이 아이콘 위치에 직접 그리는 메뉴가 있습니다. Wine 자체 트레이 아이콘도 사용하는 환경에서는 두 아이콘이 보일 수 있습니다. 예전 메뉴가 뜨면 카카오톡과 같은 Wine prefix의 앱을 종료한 뒤 **General → Hide Wine Tray Icons**를 적용하고 재시작할 수 있습니다. 적용 범위는 그 prefix의 모든 Wine 앱이며 **Show Wine Tray Icons**로 되돌릴 수 있습니다. `kakao-linux-bridge start`는 카카오톡을 실행하고, 설정은 `kakao-linux-bridge settings`로 엽니다. 알림 배너의 위치는 데스크톱 알림 서비스가 결정합니다.
 
 ## 화면과 파일 설정
 
@@ -32,7 +32,7 @@ kakao-linux-bridge stop
 ## 연결 오류 11002 LO
 
 1. 설정 창 하단의 **Quit KakaoTalk**로 카카오톡을 종료합니다. 기존 Wine 바로가기로 실행했다면 카카오톡 트레이에서 종료합니다.
-2. **Connection → Start without tuning**으로 다시 연결을 시도합니다. 이번 실행에는 Bridge의 입력기·그래픽·DPI 설정을 적용하지 않습니다. 저장된 설정과 이전 Wine 레지스트리 변경은 유지됩니다.
+2. **Diagnostics → Connection → Start without tuning**으로 다시 연결을 시도합니다. 이번 실행에는 Bridge의 입력기·그래픽·DPI 설정을 적용하지 않습니다. 저장된 설정과 이전 Wine 레지스트리 변경은 유지됩니다.
 3. 같은 오류가 뜨면 **Check DNS**를 실행합니다. 결과는 현재 Ubuntu에서 카카오 관련 호스트의 이름을 해석할 수 있는지 보여 줍니다. 로그인 연결 자체는 카카오톡에서 확인하세요.
 
 터미널에서도 `kakao-linux-bridge start-baseline`과 `kakao-linux-bridge doctor-network`를 사용할 수 있습니다. DNS 확인이 실패하면 다른 네트워크에서 같은 검사를 해 보면 현재 네트워크의 문제인지 좁힐 수 있습니다. [Microsoft Winsock 오류 11002](https://learn.microsoft.com/en-us/windows/win32/winsock/windows-sockets-error-codes-2) · [카카오 데브톡 PC 연결 보고](https://devtalk.kakao.com/t/pc-http/152028)
@@ -42,7 +42,7 @@ kakao-linux-bridge stop
 카카오톡과 같은 Wine prefix에서 실행 중인 다른 Windows 앱을 먼저 종료하세요. Bridge Settings에서 다음 항목을 각각 적용할 수 있습니다.
 
 1. **Use Separate KakaoTalk Window**는 Wine 가상 데스크톱 지정값을 제거하고 X11 창 관리자가 카카오톡 창을 직접 관리하도록 설정합니다. Wine 가상 데스크톱을 사용하던 다른 앱도 같은 prefix를 공유하면 영향을 받을 수 있습니다.
-2. **Fix Korean Text Rendering**은 Wine의 누락된 한글 글꼴 이름에 나눔고딕 또는 Noto Sans CJK KR을 연결하고, 기본 대화상자 글꼴과 Tahoma의 대체 글꼴도 설정합니다. 적용 전 시스템 글꼴 치환표는 같은 폴더의 `fonts-before.reg`에 저장합니다. 입력 조합은 아래 IBus 프로필에서 별도로 설정합니다.
+2. **Fix Korean Text Rendering**은 Wine에서 요청하는 한글·영문 글꼴 별칭에 나눔고딕 또는 Noto Sans CJK KR을 연결합니다. Tahoma에 한글 글자가 없을 때는 이 글꼴을 보조 글꼴로 사용하도록 연결합니다. 글꼴 설정 백업은 같은 폴더의 `fonts-before.reg`와 `font-links-before.reg`에 저장됩니다. 입력 조합은 아래 IBus 프로필에서 별도로 설정합니다.
 3. **KakaoTalk (Bridge)**를 실행합니다. 같은 prefix의 Wine 데스크톱이 이미 실행 중이었다면, 그 prefix의 모든 Windows 앱을 닫고 Wine 세션이 끝난 뒤 다시 실행하세요.
 
 터미널에서는 `kakao-linux-bridge integrate-window`와 `kakao-linux-bridge integrate-fonts`를 실행할 수 있습니다. 각 작업은 변경 전에 `HKCU\Software\Wine`을 XDG 상태 디렉터리의 별도 `before.reg` 파일에 저장하고 경로를 출력합니다. 이전 값을 복원하려면 해당 prefix에서 Wine Regedit의 가져오기 기능으로 그 파일을 여세요. 가져오기는 기존 값을 되돌리며 백업 이후 추가된 값은 별도로 제거해야 합니다. [Wine 가상 데스크톱 설정](https://github.com/wine-mirror/wine/blob/wine-10.0/dlls/win32u/winstation.c) · [Wine 글꼴 대체 동작](https://github.com/wine-mirror/wine/blob/wine-10.0/dlls/win32u/font.c)
@@ -53,7 +53,9 @@ kakao-linux-bridge stop
 
 ## 이미지 붙여넣기
 
-일반 복사·붙여넣기는 Wine과 데스크톱의 클립보드 연동을 사용합니다. 이미지가 붙지 않으면 복사한 뒤 Bridge Settings의 **Prepare Image Paste**를 누르고 붙여넣을 때까지 설정 창을 열어 두세요. 현재 이미지에 PNG와 BMP를 제공하고, BMP는 다른 앱이 요청할 때 생성합니다. 이 기능은 양방향에서 사용할 수 있으며, 클립보드에 이미지 데이터가 있는 경우에 적용됩니다.
+일반 복사·붙여넣기는 Wine과 데스크톱의 클립보드 연동을 사용합니다. **Print Screen**으로 복사한 이미지가 붙지 않으면 **Bridge Settings → Clipboard → Send Clipboard Image to KakaoTalk**를 누른 뒤, 카카오톡 채팅창에서 **Ctrl+V**를 누르세요. Bridge가 데스크톱 클립보드를 읽고, 선택한 Wine prefix 안에서 Windows 클립보드에 PNG와 비트맵을 직접 넣습니다. 기본 Ubuntu Wine으로도 이 기능을 사용할 수 있습니다.
+
+이 동작은 현재 Windows 클립보드 내용을 복사한 이미지로 바꿉니다. 필요할 때 버튼을 눌러 수동으로 전송합니다. 별도 프로세스가 계속 클립보드를 감시하지 않습니다.
 
 GNOME 앱이 PNG만 클립보드에 제공하면 Wine 10의 X11 드라이버는 이를 Windows의 PNG 형식으로만 전달할 수 있습니다. 비트맵을 요청하는 Windows 앱을 위해 Wine 10 소스에 적용할 [PNG 붙여넣기 패치](patches/wine-10-png-clipboard.patch)를 제공합니다. 이 패치는 X11/XWayland에서 원본 PNG 형식을 유지하고, Windows 앱이 `CF_DIB`를 요청할 때만 비트맵을 만듭니다. 이 경로는 패치한 Wine X11 드라이버가 필요합니다.
 
@@ -64,7 +66,7 @@ git pull --ff-only
 ./scripts/install-ubuntu-wine-clipboard.sh
 ```
 
-이 스크립트는 설치 버전과 드라이버 체크섬을 검사하고, 기존 Wine 파일 대부분을 링크로 재사용합니다. 로더, 서버, 패치된 드라이버 등 추가 파일과 링크가 쓰는 공간은 테스트 환경에서 약 9 MiB였습니다. 시스템 Wine이나 APT 패키지는 바꾸지 않습니다. 카카오톡과 해당 prefix의 다른 Wine 앱을 종료한 뒤 출력된 `wine-kakao` 경로를 **Bridge Settings → Wine setup → Wine paths → Wine executable**에 넣고 **Save → Start**를 누르세요. X11/XWayland 세션이 필요합니다. 기존 Wine으로 돌아가려면 이 필드를 비우고 저장한 뒤 재시작하세요.
+이 스크립트는 설치 버전과 드라이버 체크섬을 검사하고, 기존 Wine 파일 대부분을 링크로 재사용합니다. 로더, 서버, 패치된 드라이버 등 추가 파일과 링크가 쓰는 공간은 테스트 환경에서 약 9 MiB였습니다. 시스템 Wine이나 APT 패키지는 바꾸지 않습니다. 카카오톡과 해당 prefix의 다른 Wine 앱을 종료한 뒤 출력된 `wine-kakao` 경로를 **Bridge Settings → General → Wine paths → Wine executable**에 넣고 **Save → Start**를 누르세요. X11/XWayland 세션이 필요합니다. 기존 Wine으로 돌아가려면 이 필드를 비우고 저장한 뒤 재시작하세요.
 
 이전 설치기가 만든 `installed-…` 폴더가 있으면 설치기가 경로를 출력합니다. 새 `linked-…/wine-kakao`로 정상 실행되는 것을 확인하고 Wine 앱을 모두 종료한 후 그 이전 실행기 폴더만 제거할 수 있습니다. `.wine`이나 카카오톡 데이터 폴더는 그대로 두세요.
 
@@ -88,7 +90,7 @@ Wine 10.0을 별도로 빌드하는 환경에서는 Wine 소스 최상위에서 
 
 1. Bridge Settings에서 **Desktop alerts for taskbar flashes (experimental)**를 선택하고 저장합니다.
 2. 카카오톡을 종료한 뒤 Bridge에서 다시 실행합니다.
-3. **Test Notification**은 데스크톱 표시 경로를 점검합니다. 카카오톡 창을 최소화하고 다른 계정에서 메시지를 보내 실제 수신 시 항목이 표시되는지 별도로 확인합니다.
+3. **Diagnostics → Test Notification**은 데스크톱 표시 경로를 점검합니다. 카카오톡 창을 최소화하고 다른 계정에서 메시지를 보내 실제 수신 시 항목이 표시되는지 별도로 확인합니다.
 
 Bridge는 Wine의 X11 드라이버가 보내는 작업 표시줄 점멸 이벤트를 구독합니다. Bridge가 실행한 카카오톡의 PID와 창 클래스가 일치하면 **카카오톡에서 확인할 항목이 있습니다.**를 데스크톱에 보냅니다. 이 이벤트는 메시지 수신 외에도 발생할 수 있으며, 점멸 요청을 만들지 않는 메시지는 감지할 수 없습니다. 메시지 본문과 발신자를 수집하지 않습니다. Wine이 X11 또는 XWayland를 사용하는 환경에서 동작하는 실험 기능으로 기본값은 꺼짐입니다. GNOME에서는 알림 배너가 화면 상단에 표시되며 시스템 알림 설정이 적용됩니다. [Wine 9.0 X11 드라이버](https://github.com/wine-mirror/wine/blob/wine-9.0/dlls/winex11.drv/window.c) · [GNOME 알림](https://help.gnome.org/gnome-help/shell-overview.html)
 
@@ -100,9 +102,9 @@ Wine 없이 알림만 받으려면 Android 휴대폰의 KDE Connect를 Ubuntu GN
 
 세션 D-Bus에서 단일 감독 프로세스를 사용하며 Wine 실행기 종료를 비동기로 감시합니다. GTK4 설정 창은 별도 실행 파일입니다. Bridge는 주기적인 타이머나 네트워크 서비스 없이 동작합니다.
 
-- **클립보드**는 Wine의 데스크톱 연동 경로를 사용합니다. 설정 창에서 테스트 텍스트 및 작은 이미지를 복사한 뒤 카카오톡에 붙여 넣으세요. 역방향은 카카오톡에서 텍스트와 이미지를 복사한 후 **Clipboard Formats**에서 형식 노출을 확인하고 Ubuntu 편집기에 붙여 넣습니다. 실제 카카오톡과 Wayland/XWayland 간 양방향 이미지 호환성은 미검증입니다.
+- **클립보드**를 Weston Wayland 세션에서 PNG만 제공하는 클립보드로 재현했습니다. 설정에서 이미지를 전송한 뒤 패치하지 않은 Ubuntu Wine 10.0의 Win32 테스트 앱이 `CF_DIB`를 읽었습니다. 역방향은 별도의 X11 테스트에서 Windows 비트맵을 Linux의 `image/bmp`로 읽었습니다. 실제 카카오톡 채팅창과 GNOME Print Screen의 조합은 미검증입니다.
 - **알림**은 Xvfb와 가짜 알림 서비스에서 X11 이벤트부터 D-Bus 알림까지 테스트했습니다. 다른 PID·창 클래스의 이벤트, 점멸 종료 이벤트, 연속 요청이 배너를 중복 생성하지 않는지 확인했습니다. 공식 카카오톡이 실제 메시지를 받을 때 이 이벤트를 발생시키는지는 미검증입니다.
-- **한글과 DPI**는 Ubuntu에서 실제 카카오톡에 로그인한 뒤 입력 중 조합 문자열과 확정 후 문자열을 확인하세요. DPI 96과 144에서 재실행해 크기 및 선명도를 비교하세요.
+- **한글과 DPI**는 Wine 10.0 Win32 테스트 앱에서 Tahoma, 굴림, 맑은 고딕, MS Shell Dlg의 한글 글리프와 150% 배율(144 DPI)을 확인했습니다. 실제 카카오톡 채팅창의 한글 조합과 렌더링은 미검증입니다.
 - 기본 설치, Quit 동작, KakaoTalk 손자 프로세스나 자체 업데이트 이후의 수명 추적은 실제 Wine 및 카카오톡에서 검증해야 합니다.
 
 ## 복구 및 제거

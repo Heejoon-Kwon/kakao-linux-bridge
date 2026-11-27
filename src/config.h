@@ -15,3 +15,4 @@ char *bridge_find_wine(GKeyFile *config);
 char *bridge_find_prefix(GKeyFile *config);
 char *bridge_find_client(GKeyFile *config, const char *prefix);
 char *bridge_downloads(void);
+char *bridge_find_helper(const char *name, GError **error);

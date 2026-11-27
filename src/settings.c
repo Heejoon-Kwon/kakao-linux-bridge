@@ -1,6 +1,7 @@
 #include "config.h"
 #include "wine-tuning.h"
 #include "image-clipboard.h"
+#include "wine-clipboard.h"
 #include <gtk/gtk.h>
 
 typedef struct {
@@ -16,6 +17,7 @@ typedef struct {
     GtkCheckButton *korean_profile;
     GtkLabel *status;
     GCancellable *image_request;
+    gboolean image_importing;
 } Settings;
 
 static void status(Settings *settings, const char *text)
@@ -95,7 +97,7 @@ static void integration_done(GObject *object, GAsyncResult *result, gpointer dat
     }
     Settings *settings = g_object_get_data(G_OBJECT(window), "settings");
     if (gtk_widget_get_visible(GTK_WIDGET(window)))
-        status(settings, error ? error->message : (output && *output ? output : "No Wine integration output."));
+        status(settings, error ? error->message : (output && *output ? output : "No output."));
 }
 
 static void integration_confirmed(GObject *object, GAsyncResult *result, gpointer data)
@@ -124,10 +126,13 @@ static void integrate_clicked(GtkButton *button, gpointer data)
     Settings *settings = data;
     const char *command = g_object_get_data(G_OBJECT(button), "command");
     gboolean fonts = g_str_equal(command, "integrate-fonts");
-    g_autoptr(GtkAlertDialog) dialog = gtk_alert_dialog_new(
-        "%s", fonts ? "Apply Korean font fallbacks?" : "Open KakaoTalk as a separate window?");
-    gtk_alert_dialog_set_detail(dialog,
-        "Quit KakaoTalk and other Wine apps in the selected prefix first. This updates the prefix and saves a registry backup.");
+    gboolean tray = g_str_has_suffix(command, "-wine-tray");
+    const char *title = tray ? "Change Wine tray visibility?" :
+        (fonts ? "Apply Korean font fallbacks?" : "Open KakaoTalk as a separate window?");
+    g_autoptr(GtkAlertDialog) dialog = gtk_alert_dialog_new("%s", title);
+    gtk_alert_dialog_set_detail(dialog, tray
+        ? "Quit the Wine apps in this prefix first. This applies to all Wine tray icons in the prefix."
+        : "Quit the Wine apps in this prefix first. This action saves a registry backup.");
     const char *buttons[] = { "Cancel", "Apply", NULL };
     gtk_alert_dialog_set_buttons(dialog, buttons);
     gtk_alert_dialog_set_cancel_button(dialog, 0);
@@ -216,6 +221,55 @@ static void image_clipboard_changed(GdkClipboard *clipboard, gpointer data)
     g_cancellable_cancel(request->cancellable);
 }
 
+static void image_imported(GObject *object, GAsyncResult *result, gpointer data)
+{
+    g_autoptr(GtkWindow) window = data;
+    Settings *settings = g_object_get_data(G_OBJECT(window), "settings");
+    g_autoptr(GError) error = NULL;
+    settings->image_importing = FALSE;
+    gboolean transferred = g_subprocess_communicate_finish(G_SUBPROCESS(object), result, NULL, NULL, &error);
+    if (!gtk_widget_get_visible(GTK_WIDGET(window)))
+        return;
+    if (transferred && g_subprocess_get_successful(G_SUBPROCESS(object)))
+        status(settings, "Image sent to Wine. Switch to KakaoTalk and press Ctrl+V.");
+    else
+        status(settings, error ? error->message : "Wine could not accept the image. Check the selected Wine runner and prefix.");
+}
+
+static void import_image(Settings *settings, GdkTexture *image)
+{
+    g_autoptr(GError) error = NULL;
+    g_autoptr(GKeyFile) config = bridge_config_load(&error);
+    g_autofree char *wine = config ? bridge_find_wine(config) : NULL;
+    g_autofree char *prefix = config ? bridge_find_prefix(config) : NULL;
+    if (!wine || !prefix || !g_file_test(prefix, G_FILE_TEST_IS_DIR)) {
+        status(settings, error ? error->message : "Save the Wine executable and prefix, then start KakaoTalk.");
+        return;
+    }
+    g_autofree char *helper = bridge_find_helper("clipboard-import.exe", &error);
+    if (!helper || !g_file_test(helper, G_FILE_TEST_IS_REGULAR)) {
+        status(settings, error ? error->message : "The Windows clipboard helper is missing.");
+        return;
+    }
+    g_autoptr(GBytes) payload = bridge_wine_image_payload(image, &error);
+    if (!payload) {
+        status(settings, error->message);
+        return;
+    }
+    g_autoptr(GSubprocessLauncher) launcher = g_subprocess_launcher_new(
+        G_SUBPROCESS_FLAGS_STDIN_PIPE | G_SUBPROCESS_FLAGS_STDOUT_SILENCE | G_SUBPROCESS_FLAGS_STDERR_SILENCE);
+    g_subprocess_launcher_setenv(launcher, "WINEPREFIX", prefix, TRUE);
+    const char *args[] = { wine, helper, NULL };
+    g_autoptr(GSubprocess) process = g_subprocess_launcher_spawnv(launcher, args, &error);
+    if (!process) {
+        status(settings, error->message);
+        return;
+    }
+    settings->image_importing = TRUE;
+    status(settings, "Sending image to Wine…");
+    g_subprocess_communicate_async(process, payload, NULL, image_imported, g_object_ref(settings->window));
+}
+
 static void image_read(GObject *object, GAsyncResult *result, gpointer data)
 {
     GdkClipboard *clipboard = GDK_CLIPBOARD(object);
@@ -232,10 +286,8 @@ static void image_read(GObject *object, GAsyncResult *result, gpointer data)
                 status(settings, "Clipboard contents changed. Try again with the new image.");
             else if (!image)
                 status(settings, "Copy an image in Ubuntu or KakaoTalk first.");
-            else {
-                bridge_clipboard_offer_image(clipboard, image);
-                status(settings, "Image ready in PNG and BMP. Keep this window open while pasting.");
-            }
+            else
+                import_image(settings, image);
         }
     }
     g_object_unref(request->cancellable);
@@ -247,7 +299,7 @@ static void prepare_clipboard(GtkButton *button, gpointer data)
 {
     (void)button;
     Settings *settings = data;
-    if (settings->image_request)
+    if (settings->image_request || settings->image_importing)
         return;
     GdkClipboard *source = clipboard(settings);
     settings->image_request = g_cancellable_new();
@@ -314,22 +366,36 @@ static GtkWidget *section(GtkWidget *parent, const char *title)
     return card;
 }
 
-static void check_connection(GtkButton *button, gpointer data)
+static void diagnostics_clicked(GtkButton *button, gpointer data)
 {
-    (void)button;
     Settings *settings = data;
+    const char *command = g_object_get_data(G_OBJECT(button), "command");
     g_autoptr(GError) error = NULL;
     g_autofree char *bridge = bridge_executable(&error);
-    const char *args[] = { bridge, "doctor-network", NULL };
+    const char *args[] = { bridge, command, NULL };
     g_autoptr(GSubprocess) process = bridge ? g_subprocess_newv(
         args, G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_MERGE, &error) : NULL;
     if (!process) {
         status(settings, error->message);
         return;
     }
-    status(settings, "Checking Ubuntu DNS…");
+    status(settings, g_str_equal(command, "doctor-network") ? "Checking Ubuntu DNS…" : "Contacting the notification service…");
     g_subprocess_communicate_utf8_async(process, NULL, NULL, integration_done,
                                        g_object_ref(settings->window));
+}
+
+static GtkWidget *settings_page(GtkStack *stack, const char *name, const char *title)
+{
+    GtkWidget *scroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_stack_add_titled(stack, scroll, name, title);
+    GtkWidget *content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
+    gtk_widget_set_margin_top(content, 20);
+    gtk_widget_set_margin_bottom(content, 20);
+    gtk_widget_set_margin_start(content, 20);
+    gtk_widget_set_margin_end(content, 20);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), content);
+    return content;
 }
 
 static void activate(GtkApplication *app, gpointer unused)
@@ -345,24 +411,35 @@ static void activate(GtkApplication *app, gpointer unused)
     g_object_set_data_full(G_OBJECT(settings->window), "settings", settings, g_free);
     g_signal_connect(settings->window, "close-request", G_CALLBACK(cancel_image_request), settings);
     gtk_window_set_title(settings->window, "Kakao Linux Bridge");
-    gtk_window_set_default_size(settings->window, 690, 720);
+    gtk_window_set_default_size(settings->window, 676, 548);
     GtkWidget *layout = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_window_set_child(settings->window, layout);
-    GtkWidget *scroll = gtk_scrolled_window_new();
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-    gtk_widget_set_vexpand(scroll, TRUE);
-    gtk_box_append(GTK_BOX(layout), scroll);
+    GtkWidget *stack = gtk_stack_new();
+    gtk_widget_set_vexpand(stack, TRUE);
+    gtk_stack_set_hhomogeneous(GTK_STACK(stack), FALSE);
+    gtk_stack_set_vhomogeneous(GTK_STACK(stack), FALSE);
+    GtkWidget *box = settings_page(GTK_STACK(stack), "general", "General");
+    GtkWidget *images = settings_page(GTK_STACK(stack), "clipboard", "Clipboard");
+    GtkWidget *diagnostics = settings_page(GTK_STACK(stack), "diagnostics", "Diagnostics");
+    GtkWidget *header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_widget_add_css_class(header, "bridge-toolbar");
+    GtkWidget *heading = gtk_label_new("KakaoTalk Settings");
+    gtk_widget_add_css_class(heading, "title-3");
+    gtk_box_append(GTK_BOX(header), heading);
+    GtkWidget *toolbar_spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(toolbar_spacer, TRUE);
+    gtk_box_append(GTK_BOX(header), toolbar_spacer);
+    GtkWidget *switcher = gtk_stack_switcher_new();
+    gtk_stack_switcher_set_stack(GTK_STACK_SWITCHER(switcher), GTK_STACK(stack));
+    gtk_box_append(GTK_BOX(header), switcher);
+    gtk_box_append(GTK_BOX(layout), header);
+    gtk_box_append(GTK_BOX(layout), stack);
 
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
-    gtk_widget_set_margin_top(box, 20);
-    gtk_widget_set_margin_bottom(box, 20);
-    gtk_widget_set_margin_start(box, 20);
-    gtk_widget_set_margin_end(box, 20);
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), box);
-    GtkWidget *connection = section(box, "Connection");
+    GtkWidget *connection = section(diagnostics, "Connection");
     GtkWidget *network = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_box_append(GTK_BOX(connection), network);
-    add_button(network, "Check DNS", G_CALLBACK(check_connection), settings);
+    GtkWidget *dns = add_button(network, "Check DNS", G_CALLBACK(diagnostics_clicked), settings);
+    g_object_set_data(G_OBJECT(dns), "command", "doctor-network");
     add_command(network, "Start without tuning", "start-baseline", settings);
     GtkWidget *description = gtk_label_new("For error 11002, quit KakaoTalk before trying an untuned start.");
     gtk_label_set_wrap(GTK_LABEL(description), TRUE);
@@ -429,6 +506,13 @@ static void activate(GtkApplication *app, gpointer unused)
     s->attention = GTK_CHECK_BUTTON(gtk_check_button_new_with_label("Desktop alerts for taskbar flashes (experimental)"));
     gtk_check_button_set_active(s->attention, g_key_file_get_boolean(config, "Bridge", "WatchAttention", NULL));
     gtk_box_append(GTK_BOX(preferences), GTK_WIDGET(s->attention));
+    GtkWidget *tray_buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_box_append(GTK_BOX(preferences), tray_buttons);
+    GtkWidget *hide_tray = add_button(tray_buttons, "Hide Wine Tray Icons", G_CALLBACK(integrate_clicked), s);
+    GtkWidget *show_tray = add_button(tray_buttons, "Show Wine Tray Icons", G_CALLBACK(integrate_clicked), s);
+    g_object_set_data(G_OBJECT(hide_tray), "command", "hide-wine-tray");
+    g_object_set_data(G_OBJECT(show_tray), "command", "show-wine-tray");
+
 
     GtkWidget *tools = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_box_append(GTK_BOX(wine_card), tools);
@@ -442,16 +526,25 @@ static void activate(GtkApplication *app, gpointer unused)
     GtkWidget *fonts = add_button(integration, "Fix Korean Text Rendering", G_CALLBACK(integrate_clicked), s);
     g_object_set_data(G_OBJECT(fonts), "command", "integrate-fonts");
 
+    GtkWidget *clipboard_card = section(images, "Ubuntu image → KakaoTalk");
+    GtkWidget *instruction = gtk_label_new("Copy a screenshot in Ubuntu, send it to Wine, then press Ctrl+V in KakaoTalk.");
+    gtk_label_set_wrap(GTK_LABEL(instruction), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(instruction), 0);
+    gtk_box_append(GTK_BOX(clipboard_card), instruction);
+    GtkWidget *send = add_button(clipboard_card, "Send Clipboard Image to KakaoTalk", G_CALLBACK(prepare_clipboard), s);
+    gtk_widget_set_halign(send, GTK_ALIGN_START);
+    gtk_widget_add_css_class(send, "suggested-action");
+
+    GtkWidget *tests_card = section(images, "Clipboard tests");
     GtkWidget *tests = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    GtkWidget *clipboard_card = section(box, "Clipboard and notification tests");
-    gtk_box_append(GTK_BOX(clipboard_card), tests);
+    gtk_box_append(GTK_BOX(tests_card), tests);
     add_button(tests, "Copy Test Text", G_CALLBACK(copy_text), s);
     add_button(tests, "Copy Test Image", G_CALLBACK(copy_image), s);
-    add_button(tests, "Prepare Image Paste", G_CALLBACK(prepare_clipboard), s);
-    GtkWidget *more_tests = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_box_append(GTK_BOX(clipboard_card), more_tests);
-    add_button(more_tests, "Clipboard Formats", G_CALLBACK(inspect_clipboard), s);
-    add_command(more_tests, "Test Notification", "test-notification", s);
+    add_button(tests, "Clipboard Formats", G_CALLBACK(inspect_clipboard), s);
+    GtkWidget *notifications = section(diagnostics, "Desktop notifications");
+    GtkWidget *test_banner = add_button(notifications, "Test Notification", G_CALLBACK(diagnostics_clicked), s);
+    gtk_widget_set_halign(test_banner, GTK_ALIGN_START);
+    g_object_set_data(G_OBJECT(test_banner), "command", "test-notification");
 
     s->status = GTK_LABEL(gtk_label_new(NULL));
     gtk_label_set_wrap(s->status, TRUE);
@@ -486,11 +579,13 @@ static void activate(GtkApplication *app, gpointer unused)
     gtk_label_set_wrap(GTK_LABEL(details), TRUE);
     gtk_label_set_selectable(GTK_LABEL(details), TRUE);
     gtk_widget_add_css_class(details, "dim-label");
-    gtk_box_append(GTK_BOX(wine_card), details);
+    gtk_box_append(GTK_BOX(section(diagnostics, "Bridge " BRIDGE_APP_VERSION " · Detected Wine environment")), details);
     status(s, error ? error->message : (detected_client && detected_wine ? "Wine and KakaoTalk detected." : "Check Wine setup."));
     g_autoptr(GtkCssProvider) theme = gtk_css_provider_new();
     gtk_css_provider_load_from_string(theme,
-        ".bridge-card { border: 1px solid alpha(currentColor,0.18); border-radius: 12px; padding: 14px; }"
+        ".bridge-card { border: 1px solid alpha(currentColor,0.15); border-radius: 12px; padding: 16px; background: alpha(currentColor,0.025); }"
+        ".bridge-card .heading { font-size: 1.05em; margin-bottom: 3px; }"
+        ".bridge-toolbar { padding: 14px 20px; border-bottom: 1px solid alpha(currentColor,0.15); }"
         ".bridge-footer { padding: 12px 20px 16px; border-top: 1px solid alpha(currentColor,0.20); }"
         "button.bridge-start, button.bridge-save, button.bridge-quit { color: white; background-image: none; border-color: transparent; box-shadow: none; text-shadow: none; padding: 6px 17px; }"
         "button.bridge-start { background-color: #176b49; } button.bridge-start:hover { background-color: #1b7753; }"

@@ -349,7 +349,7 @@ static int command_line(GApplication *app, GApplicationCommandLine *line, gpoint
     g_autofree char *installer = NULL;
     if (g_str_equal(command, "--help") || g_str_equal(command, "help")) {
         g_application_command_line_print(line, "Usage: " BRIDGE_EXE
-            " [start|start-baseline|trace-events|stop|status|doctor|doctor-network|settings|downloads|test-notification|install-client FILE|repair|integrate-window|integrate-fonts|disable-autostart]\n");
+            " [start|start-baseline|trace-events|stop|status|doctor|doctor-network|settings|downloads|test-notification|install-client FILE|repair|integrate-window|integrate-fonts|hide-wine-tray|show-wine-tray|disable-autostart]\n");
         return 0;
     }
     if (g_str_equal(command, "status")) {
@@ -357,7 +357,10 @@ static int command_line(GApplication *app, GApplicationCommandLine *line, gpoint
         return 0;
     }
     if (g_str_equal(command, "test-notification")) {
-        if (notify(bridge, "Kakao Linux Bridge", "Test notification", &error)) return 0;
+        if (notify(bridge, "Kakao Linux Bridge", "Test notification", &error)) {
+            g_application_command_line_print(line, "Notification accepted by the desktop service.\n");
+            return 0;
+        }
         goto failed;
     }
     if (g_str_equal(command, "settings")) {
@@ -385,7 +388,9 @@ static int command_line(GApplication *app, GApplicationCommandLine *line, gpoint
     gboolean doctor = g_str_equal(command, "doctor") && argc == 2;
     gboolean integrate_fonts = g_str_equal(command, "integrate-fonts") && argc == 2;
     gboolean integrate = integrate_fonts || (g_str_equal(command, "integrate-window") && argc == 2);
-    if (!starting && !installing && !repairing && !doctor && !integrate) {
+    gboolean hide_tray = g_str_equal(command, "hide-wine-tray") && argc == 2;
+    gboolean change_tray = hide_tray || (g_str_equal(command, "show-wine-tray") && argc == 2);
+    if (!starting && !installing && !repairing && !doctor && !integrate && !change_tray) {
         g_application_command_line_printerr(line, "Invalid command. See " BRIDGE_EXE " --help.\n");
         return 2;
     }
@@ -445,6 +450,19 @@ static int command_line(GApplication *app, GApplicationCommandLine *line, gpoint
         if (starting && !g_application_command_line_get_is_remote(line))
             open_settings(NULL);
         return 1;
+    }
+    if (change_tray) {
+        g_autoptr(GSubprocessLauncher) launcher = g_subprocess_launcher_new(G_SUBPROCESS_FLAGS_NONE);
+        g_subprocess_launcher_setenv(launcher, "WINEPREFIX", prefix, TRUE);
+        const char *args[] = {
+            wine, "reg", "add", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer",
+            "/v", "NoTrayItemsDisplay", "/t", "REG_DWORD", "/d", hide_tray ? "1" : "0", "/f", NULL
+        };
+        g_autoptr(GSubprocess) process = g_subprocess_launcher_spawnv(launcher, args, &error);
+        if (!process || !g_subprocess_wait_check(process, NULL, &error))
+            goto failed;
+        g_application_command_line_print(line, "Wine tray preference saved. Restart all Wine apps in this prefix.\n");
+        return 0;
     }
     if (integrate) {
         g_autofree char *backup = NULL;

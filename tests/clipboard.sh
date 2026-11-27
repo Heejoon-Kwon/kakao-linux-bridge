@@ -27,6 +27,7 @@ wait_ready() {
 wait_ready "$tmp/display"
 export DISPLAY=:$(cat "$tmp/display")
 export GDK_BACKEND=x11
+"$fixture" --verify-frame
 "$fixture" >"$tmp/ready" &
 owner=$!
 wait_ready "$tmp/ready"

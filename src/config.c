@@ -116,3 +116,20 @@ char *bridge_downloads(void)
     const char *dir = g_get_user_special_dir(G_USER_DIRECTORY_DOWNLOAD);
     return dir ? g_strdup(dir) : g_build_filename(g_get_home_dir(), "Downloads", NULL);
 }
+
+char *bridge_find_helper(const char *name, GError **error)
+{
+    g_autofree char *self = g_file_read_link("/proc/self/exe", error);
+    if (!self)
+        return NULL;
+    g_autofree char *bin = g_path_get_dirname(self);
+    g_autofree char *development = g_build_filename(bin, name, NULL);
+    if (g_file_test(development, G_FILE_TEST_IS_REGULAR))
+        return g_steal_pointer(&development);
+    g_autofree char *prefix = g_path_get_dirname(bin);
+    g_autofree char *installed = g_build_filename(prefix, BRIDGE_LIBEXECDIR, BRIDGE_EXE, name, NULL);
+    if (g_file_test(installed, G_FILE_TEST_IS_REGULAR))
+        return g_steal_pointer(&installed);
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND, "Windows helper is missing: %s", name);
+    return NULL;
+}
