@@ -48,11 +48,16 @@ gboolean bridge_integrate_prefix(const char *wine, const char *prefix, const cha
         return FALSE;
 
     g_autoptr(GString) patch = g_string_new("REGEDIT4\r\n\r\n");
+    static const char font_key[] = "HKLM\\Software\\Microsoft\\Windows NT\\CurrentVersion\\FontSubstitutes";
     if (fonts) {
         g_string_append(patch, "[HKEY_CURRENT_USER\\Software\\Wine\\Fonts\\Replacements]\r\n");
         const char *names[] = { "Gulim", "GulimChe", "Dotum", "DotumChe", "Batang", "Malgun Gothic" };
         for (guint i = 0; i < G_N_ELEMENTS(names); i++)
             g_string_append_printf(patch, "\"%s\"=\"%s\"\r\n", names[i], family);
+        g_string_append(patch, "\r\n[HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\FontSubstitutes]\r\n");
+        const char *font_substitutes[] = { "Tahoma", "MS Sans Serif", "MS Shell Dlg", "MS Shell Dlg 2" };
+        for (guint i = 0; i < G_N_ELEMENTS(font_substitutes); i++)
+            g_string_append_printf(patch, "\"%s\"=\"%s\"\r\n", font_substitutes[i], family);
     } else {
         g_string_append(patch, "[HKEY_CURRENT_USER\\Software\\Wine\\Explorer]\r\n\"Desktop\"=-\r\n\r\n");
         g_string_append_printf(patch, "[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\%s\\Explorer]\r\n"
@@ -81,6 +86,9 @@ gboolean bridge_integrate_prefix(const char *wine, const char *prefix, const cha
 
     g_autofree char *directory = g_path_get_basename(temp);
     g_autofree char *export_path = g_build_filename(temp, "before.reg", NULL);
+    g_autofree char *font_export_path = g_build_filename(temp, "fonts-before.reg", NULL);
+    g_autofree char *font_backup_path = g_build_filename(backup_dir, "fonts-before.reg", NULL);
+    g_autofree char *font_export_windows = g_strdup_printf("C:\\%s\\fonts-before.reg", directory);
     g_autofree char *patch_path = g_build_filename(temp, "changes.reg", NULL);
     g_autofree char *export_windows = g_strdup_printf("C:\\%s\\before.reg", directory);
     g_autofree char *patch_windows = g_strdup_printf("C:\\%s\\changes.reg", directory);
@@ -96,6 +104,14 @@ gboolean bridge_integrate_prefix(const char *wine, const char *prefix, const cha
                      g_file_get_contents(export_path, &snapshot, &size, error) &&
                      g_file_set_contents_full(saved_path, snapshot, size, G_FILE_SET_CONTENTS_CONSISTENT,
                                                0600, error);
+    if (saved && fonts) {
+        const char *font_export_args[] = { wine, "reg", "export", font_key, font_export_windows, "/y", NULL };
+        g_clear_pointer(&snapshot, g_free);
+        saved = run_registry(launcher, font_export_args, error) &&
+                g_file_get_contents(font_export_path, &snapshot, &size, error) &&
+                g_file_set_contents_full(font_backup_path, snapshot, size,
+                                         G_FILE_SET_CONTENTS_CONSISTENT, 0600, error);
+    }
     gboolean applied = FALSE;
     if (saved) {
         *backup_path = g_steal_pointer(&saved_path);
@@ -106,8 +122,12 @@ gboolean bridge_integrate_prefix(const char *wine, const char *prefix, const cha
 
     g_unlink(export_path);
     g_unlink(patch_path);
+    g_unlink(font_export_path);
     g_rmdir(temp);
-    if (!saved)
+    if (!saved) {
+        g_unlink(saved_path);
+        g_unlink(font_backup_path);
         g_rmdir(backup_dir);
+    }
     return applied;
 }

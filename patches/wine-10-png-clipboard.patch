@@ -1,0 +1,81 @@
+--- a/dlls/winex11.drv/Makefile.in
++++ b/dlls/winex11.drv/Makefile.in
+@@ -2,7 +2,7 @@
+ UNIXLIB   = winex11.so
+ IMPORTS   = uuid user32 gdi32 win32u
+ UNIX_CFLAGS  = $(X_CFLAGS)
+-UNIX_LIBS    = -lwin32u $(X_LIBS) $(PTHREAD_LIBS) -lm
++UNIX_LIBS    = -lwin32u $(X_LIBS) $(PTHREAD_LIBS) -lm -lpng
+ 
+ SOURCES = \
+ 	bitblt.c \
+--- a/dlls/winex11.drv/clipboard.c
++++ b/dlls/winex11.drv/clipboard.c
+@@ -79,6 +79,7 @@
+ #include <limits.h>
+ #include <time.h>
+ #include <assert.h>
++#include <png.h>
+ 
+ #include "ntstatus.h"
+ #define WIN32_NO_STATUS
+@@ -116,6 +117,7 @@
+ 
+ static void *import_data( Atom type, const void *data, size_t size, size_t *ret_size );
+ static void *import_pixmap( Atom type, const void *data, size_t size, size_t *ret_size );
++static void *import_image_png( Atom type, const void *data, size_t size, size_t *ret_size );
+ static void *import_image_bmp( Atom type, const void *data, size_t size, size_t *ret_size );
+ static void *import_string( Atom type, const void *data, size_t size, size_t *ret_size );
+ static void *import_utf8_string( Atom type, const void *data, size_t size, size_t *ret_size );
+@@ -178,6 +180,7 @@
+     { GIFW, 0,               XATOM_image_gif,           import_data,          export_data },
+     { JFIFW, 0,              XATOM_image_jpeg,          import_data,          export_data },
+     { PNGW, 0,               XATOM_image_png,           import_data,          export_data },
++    { 0, CF_DIB,             XATOM_image_png,           import_image_png,     NULL },
+     { HTMLFormatW, 0,        XATOM_HTML_Format,         import_data,          export_data },
+     { HTMLFormatW, 0,        XATOM_text_html,           import_text_html,     export_text_html },
+     { 0, 0,                  XATOM_TARGETS,             import_targets,       export_targets },
+@@ -952,6 +955,43 @@
+ }
+ 
+ 
++/* Convert only when Windows requests CF_DIB; preserve the original PNG target. */
++static void *import_image_png( Atom type, const void *data, size_t size, size_t *ret_size )
++{
++    png_image image = { .version = PNG_IMAGE_VERSION };
++    const png_color white = { 255, 255, 255 };
++    BITMAPINFOHEADER *header = NULL;
++    size_t stride, pixels;
++
++    if (type != x11drv_atom(image_png)) return NULL;
++    if (!png_image_begin_read_from_memory( &image, data, size )) goto done;
++    if (!image.width || !image.height || image.width > 16384 || image.height > 16384 ||
++        (size_t)image.width * image.height > 32 * 1024 * 1024) goto done;
++
++    image.format = PNG_FORMAT_BGR;
++    stride = ((size_t)image.width * 3 + 3) & ~(size_t)3;
++    pixels = stride * image.height;
++    if (!(header = calloc( 1, sizeof(*header) + pixels ))) goto done;
++    if (!png_image_finish_read( &image, &white, header + 1, -(png_int_32)stride, NULL ))
++    {
++        free( header );
++        header = NULL;
++        goto done;
++    }
++    header->biSize = sizeof(*header);
++    header->biWidth = image.width;
++    header->biHeight = image.height;
++    header->biPlanes = 1;
++    header->biBitCount = 24;
++    header->biCompression = BI_RGB;
++    header->biSizeImage = pixels;
++    *ret_size = sizeof(*header) + pixels;
++
++done:
++    png_image_free( &image );
++    return header;
++}
++
+ /**************************************************************************
+  *		import_image_bmp
+  *

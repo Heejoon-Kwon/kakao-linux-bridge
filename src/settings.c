@@ -8,7 +8,8 @@ typedef struct {
     GtkEntry *wine;
     GtkEntry *prefix;
     GtkEntry *client;
-    GtkSpinButton *dpi;
+    GtkDropDown *scale;
+    guint dpi_values[7];
     GtkCheckButton *downloads;
     GtkCheckButton *autostart;
     GtkCheckButton *attention;
@@ -35,13 +36,10 @@ static void save(GtkButton *button, gpointer data)
     const char *wine = gtk_editable_get_text(GTK_EDITABLE(settings->wine));
     const char *prefix = gtk_editable_get_text(GTK_EDITABLE(settings->prefix));
     const char *client = gtk_editable_get_text(GTK_EDITABLE(settings->client));
-    int dpi = gtk_spin_button_get_value_as_int(settings->dpi);
+    guint scale = gtk_drop_down_get_selected(settings->scale);
+    guint dpi = scale < G_N_ELEMENTS(settings->dpi_values) ? settings->dpi_values[scale] : 0;
     if ((*prefix && !g_path_is_absolute(prefix)) || (*client && !g_path_is_absolute(client))) {
         status(settings, "Enter absolute paths for the Wine prefix and KakaoTalk.");
-        return;
-    }
-    if (dpi && dpi < 96) {
-        status(settings, "Enter 0 to keep the current DPI, or a value between 96 and 384.");
         return;
     }
     g_key_file_set_string(config, "Bridge", "Wine", wine);
@@ -127,7 +125,7 @@ static void integrate_clicked(GtkButton *button, gpointer data)
     const char *command = g_object_get_data(G_OBJECT(button), "command");
     gboolean fonts = g_str_equal(command, "integrate-fonts");
     g_autoptr(GtkAlertDialog) dialog = gtk_alert_dialog_new(
-        "%s", fonts ? "Apply Korean font aliases?" : "Open KakaoTalk as a separate window?");
+        "%s", fonts ? "Apply Korean font fallbacks?" : "Open KakaoTalk as a separate window?");
     gtk_alert_dialog_set_detail(dialog,
         "Quit KakaoTalk and other Wine apps in the selected prefix first. This updates the prefix and saves a registry backup.");
     const char *buttons[] = { "Cancel", "Apply", NULL };
@@ -372,7 +370,7 @@ static void activate(GtkApplication *app, gpointer unused)
     gtk_widget_add_css_class(description, "dim-label");
     gtk_box_append(GTK_BOX(connection), description);
     GtkWidget *wine_card = section(box, "Wine setup");
-    GtkWidget *paths = gtk_expander_new("Wine paths and display scale");
+    GtkWidget *paths = gtk_expander_new("Wine paths");
     gtk_box_append(GTK_BOX(wine_card), paths);
     GtkGrid *grid = GTK_GRID(gtk_grid_new());
     gtk_grid_set_row_spacing(grid, 8);
@@ -390,12 +388,32 @@ static void activate(GtkApplication *app, gpointer unused)
     s->wine = path_entry(grid, 0, "Wine executable", wine);
     s->prefix = path_entry(grid, 1, "Wine prefix", prefix);
     s->client = path_entry(grid, 2, "KakaoTalk executable", client);
-    GtkWidget *dpi_label = gtk_label_new("Wine DPI (0 keeps current DPI)");
-    gtk_label_set_xalign(GTK_LABEL(dpi_label), 0);
-    s->dpi = GTK_SPIN_BUTTON(gtk_spin_button_new_with_range(0, 384, 1));
-    gtk_spin_button_set_value(s->dpi, g_key_file_get_integer(config, "Bridge", "DPI", NULL));
-    gtk_grid_attach(grid, dpi_label, 0, 3, 1, 1);
-    gtk_grid_attach(grid, GTK_WIDGET(s->dpi), 1, 3, 1, 1);
+    GtkWidget *scale_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_box_append(GTK_BOX(wine_card), scale_row);
+    GtkWidget *scale_label = gtk_label_new("KakaoTalk display scale");
+    gtk_label_set_xalign(GTK_LABEL(scale_label), 0);
+    gtk_widget_set_hexpand(scale_label, TRUE);
+    gtk_box_append(GTK_BOX(scale_row), scale_label);
+    const char *scales[] = { "Keep Wine setting", "100%", "125%", "150%", "175%", "200%", NULL };
+    const guint dpi_values[] = { 0, 96, 120, 144, 168, 192 };
+    g_autoptr(GtkStringList) scale_options = gtk_string_list_new(scales);
+    gint current_dpi = g_key_file_get_integer(config, "Bridge", "DPI", NULL);
+    guint selected = 0;
+    for (guint i = 0; i < G_N_ELEMENTS(dpi_values); i++) {
+        s->dpi_values[i] = dpi_values[i];
+        if (current_dpi == (gint)dpi_values[i])
+            selected = i;
+    }
+    if (!selected && current_dpi >= 96 && current_dpi <= 384) {
+        selected = G_N_ELEMENTS(dpi_values);
+        s->dpi_values[selected] = (guint)current_dpi;
+        g_autofree char *custom = g_strdup_printf("Custom (%d DPI)", current_dpi);
+        gtk_string_list_append(scale_options, custom);
+    }
+    s->scale = GTK_DROP_DOWN(gtk_drop_down_new(G_LIST_MODEL(g_object_ref(scale_options)), NULL));
+    gtk_drop_down_set_selected(s->scale, selected);
+    gtk_widget_set_tooltip_text(GTK_WIDGET(s->scale), "Save, close Wine apps in this prefix, then start KakaoTalk. Other apps in the same prefix also use this scale.");
+    gtk_box_append(GTK_BOX(scale_row), GTK_WIDGET(s->scale));
     s->korean_profile = GTK_CHECK_BUTTON(gtk_check_button_new_with_label("Ubuntu Korean input (IBus + X11/XWayland)"));
     gtk_check_button_set_active(s->korean_profile, g_key_file_get_boolean(config, "Bridge", BRIDGE_KOREAN_PROFILE, NULL));
     gtk_box_append(GTK_BOX(wine_card), GTK_WIDGET(s->korean_profile));
@@ -421,7 +439,7 @@ static void activate(GtkApplication *app, gpointer unused)
     gtk_box_append(GTK_BOX(wine_card), integration);
     GtkWidget *separate = add_button(integration, "Use Separate KakaoTalk Window", G_CALLBACK(integrate_clicked), s);
     g_object_set_data(G_OBJECT(separate), "command", "integrate-window");
-    GtkWidget *fonts = add_button(integration, "Apply Korean Font Aliases", G_CALLBACK(integrate_clicked), s);
+    GtkWidget *fonts = add_button(integration, "Fix Korean Text Rendering", G_CALLBACK(integrate_clicked), s);
     g_object_set_data(G_OBJECT(fonts), "command", "integrate-fonts");
 
     GtkWidget *tests = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);

@@ -7,7 +7,7 @@
 Ubuntu 24.04 LTS amd64를 대상으로 합니다. 설치 전에 다른 카카오톡 인스턴스를 종료하세요.
 
 ```sh
-sudo apt install ./kakao-linux-bridge_0.5.0_amd64.deb
+sudo apt install ./kakao-linux-bridge_0.6.0_amd64.deb
 ```
 
 앱 목록에서 **KakaoTalk (Bridge)**를 실행합니다. Bridge는 PATH의 Wine, 환경 변수 `WINEPREFIX`, Bridge 전용 prefix 및 기본 `~/.wine`에서 환경을 찾습니다. 설정 창에서 실행 파일과 경로를 지정할 수 있습니다. 카카오톡이 없으면 **Install KakaoTalk…**에서 공식 배포처로부터 받은 로컬 설치 파일을 선택하세요. 사용자 지정 또는 기존 prefix를 사용하는 경우 전용 prefix에 설치하려면 설정의 prefix 경로를 전용 prefix로 지정하세요. `doctor`로 탐지 결과를 확인할 수 있습니다.
@@ -24,7 +24,7 @@ kakao-linux-bridge stop
 
 ## 화면과 파일 설정
 
-- **Wine DPI**는 96–384를 지정합니다. 0은 현재 Wine 값을 유지합니다. 변경은 다음 실행 때 적용되며 해당 prefix의 다른 Windows 앱에도 영향을 줄 수 있습니다.
+- **KakaoTalk display scale**은 미리 정한 배율을 제공하며, 기존 설정 파일에 저장된 사용자 지정 DPI도 유지합니다.
 - 기본 모드는 XIM 설정을 유지하고, 설정이 없으면 IBus/Fcitx 환경 변수 또는 GNOME에 등록된 IBus 한글 입력 소스를 사용합니다. 명시적으로 **Ubuntu Korean input (IBus + X11/XWayland)**를 켜면 Bridge가 실행하는 Wine에 아래 프로필을 적용합니다.
 - **Use Ubuntu Downloads**를 사용하면 전용 prefix의 Windows 다운로드 알려진 폴더를 XDG Downloads에 연결합니다. 카카오톡에서 자체 다운로드 경로를 설정한 경우 파일 창에서 `C:\Ubuntu Downloads`를 선택하세요. 매핑을 끄면 다음 실행에서 설정 적용을 생략합니다.
 - **Start KakaoTalk at login**은 XDG 자동 시작 항목을 설정합니다.
@@ -42,14 +42,22 @@ kakao-linux-bridge stop
 카카오톡과 같은 Wine prefix에서 실행 중인 다른 Windows 앱을 먼저 종료하세요. Bridge Settings에서 다음 항목을 각각 적용할 수 있습니다.
 
 1. **Use Separate KakaoTalk Window**는 Wine 가상 데스크톱 지정값을 제거하고 X11 창 관리자가 카카오톡 창을 직접 관리하도록 설정합니다. Wine 가상 데스크톱을 사용하던 다른 앱도 같은 prefix를 공유하면 영향을 받을 수 있습니다.
-2. **Apply Korean Font Aliases**는 설치된 나눔고딕 또는 Noto Sans CJK KR을 Wine의 누락된 굴림·돋움·바탕·맑은 고딕 글꼴 이름에 연결합니다. Wine에서 이미 해당 이름의 글꼴을 찾으면 그 글꼴을 우선합니다. 입력 조합은 아래 IBus 프로필에서 별도로 설정합니다.
+2. **Fix Korean Text Rendering**은 Wine의 누락된 한글 글꼴 이름에 나눔고딕 또는 Noto Sans CJK KR을 연결하고, 기본 대화상자 글꼴과 Tahoma의 대체 글꼴도 설정합니다. 적용 전 시스템 글꼴 치환표는 같은 폴더의 `fonts-before.reg`에 저장합니다. 입력 조합은 아래 IBus 프로필에서 별도로 설정합니다.
 3. **KakaoTalk (Bridge)**를 실행합니다. 같은 prefix의 Wine 데스크톱이 이미 실행 중이었다면, 그 prefix의 모든 Windows 앱을 닫고 Wine 세션이 끝난 뒤 다시 실행하세요.
 
 터미널에서는 `kakao-linux-bridge integrate-window`와 `kakao-linux-bridge integrate-fonts`를 실행할 수 있습니다. 각 작업은 변경 전에 `HKCU\Software\Wine`을 XDG 상태 디렉터리의 별도 `before.reg` 파일에 저장하고 경로를 출력합니다. 이전 값을 복원하려면 해당 prefix에서 Wine Regedit의 가져오기 기능으로 그 파일을 여세요. 가져오기는 기존 값을 되돌리며 백업 이후 추가된 값은 별도로 제거해야 합니다. [Wine 가상 데스크톱 설정](https://github.com/wine-mirror/wine/blob/wine-10.0/dlls/win32u/winstation.c) · [Wine 글꼴 대체 동작](https://github.com/wine-mirror/wine/blob/wine-10.0/dlls/win32u/font.c)
 
+## 글씨와 창 크기
+
+**Wine setup → KakaoTalk display scale**에서 **125%** 또는 **150%**를 선택하고 **Save**를 누릅니다. 카카오톡과 해당 Wine prefix의 다른 Windows 앱을 종료한 뒤 **Start**로 다시 실행하세요. 이 설정은 선택한 Wine prefix의 DPI를 바꿉니다. 일반 크기로 되돌리려면 **100%**를 저장하고 재실행하세요. **Keep Wine setting**은 현재 Wine DPI를 유지합니다.
+
 ## 이미지 붙여넣기
 
 일반 복사·붙여넣기는 Wine과 데스크톱의 클립보드 연동을 사용합니다. 이미지가 붙지 않으면 복사한 뒤 Bridge Settings의 **Prepare Image Paste**를 누르고 붙여넣을 때까지 설정 창을 열어 두세요. 현재 이미지에 PNG와 BMP를 제공하고, BMP는 다른 앱이 요청할 때 생성합니다. 이 기능은 양방향에서 사용할 수 있으며, 클립보드에 이미지 데이터가 있는 경우에 적용됩니다.
+
+GNOME 앱이 PNG만 클립보드에 제공하면 Wine 10의 X11 드라이버는 이를 Windows의 PNG 형식으로만 전달할 수 있습니다. 비트맵을 요청하는 Windows 앱을 위해 Wine 10 소스에 적용할 [PNG 붙여넣기 패치](patches/wine-10-png-clipboard.patch)를 제공합니다. 이 패치는 X11/XWayland에서 원본 PNG 형식을 유지하고, Windows 앱이 `CF_DIB`를 요청할 때만 비트맵을 만듭니다. 이 경로는 패치한 Wine X11 드라이버가 필요합니다.
+
+Wine 10.0을 별도로 빌드하는 환경에서는 Wine 소스 최상위에서 `patch -p1 < /경로/wine-10-png-clipboard.patch`를 실행한 뒤 평소의 Wine 빌드 절차로 컴파일합니다. X11 개발 의존성과 `libpng-dev`가 있어야 합니다. Bridge의 **Wine executable**에 별도로 설치한 Wine 실행 파일을 지정할 수 있습니다.
 
 ## Ubuntu GNOME의 한글 입력 프로필
 
