@@ -9,6 +9,9 @@
 #include <signal.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <string.h>
+
+int bridge_check_network(void);
 
 typedef struct {
     GApplication *app;
@@ -20,6 +23,7 @@ typedef struct {
     gboolean downloads;
     gboolean watch_attention;
     gboolean trace_events;
+    gboolean baseline;
     gboolean korean_profile;
     BridgeAttention *attention;
     gboolean stopping;
@@ -157,7 +161,7 @@ static GSubprocess *wine_spawn(Bridge *bridge, const char *const *args, gboolean
         g_autofree char *directory = g_path_get_dirname(bridge->client);
         g_subprocess_launcher_set_cwd(launcher, directory);
     }
-    if (client || bridge->korean_profile)
+    if (!bridge->baseline && (client || bridge->korean_profile))
         bridge_wine_tuning_apply(launcher, bridge->korean_profile);
     return g_subprocess_launcher_spawnv(launcher, args, error);
 }
@@ -322,7 +326,7 @@ static int command_line(GApplication *app, GApplicationCommandLine *line, gpoint
     g_autofree char *installer = NULL;
     if (g_str_equal(command, "--help") || g_str_equal(command, "help")) {
         g_application_command_line_print(line, "Usage: " BRIDGE_EXE
-            " [start|trace-events|stop|status|doctor|settings|downloads|test-notification|install-client FILE|repair|integrate-window|integrate-fonts|disable-autostart]\n");
+            " [start|start-baseline|trace-events|stop|status|doctor|doctor-network|settings|downloads|test-notification|install-client FILE|repair|integrate-window|integrate-fonts|disable-autostart]\n");
         return 0;
     }
     if (g_str_equal(command, "status")) {
@@ -351,7 +355,8 @@ static int command_line(GApplication *app, GApplicationCommandLine *line, gpoint
     }
 
     gboolean trace_events = g_str_equal(command, "trace-events") && argc == 2;
-    gboolean starting = trace_events || (g_str_equal(command, "start") && argc <= 2);
+    gboolean baseline = g_str_equal(command, "start-baseline") && argc == 2;
+    gboolean starting = trace_events || baseline || (g_str_equal(command, "start") && argc <= 2);
     gboolean installing = g_str_equal(command, "install-client") && argc == 3;
     gboolean repairing = g_str_equal(command, "repair") && argc == 2;
     gboolean doctor = g_str_equal(command, "doctor") && argc == 2;
@@ -362,7 +367,7 @@ static int command_line(GApplication *app, GApplicationCommandLine *line, gpoint
         return 2;
     }
     if (!doctor && (bridge->child || bridge->stop_pending)) {
-        if (starting && !trace_events && bridge->operation && g_str_equal(bridge->operation, "client") && !bridge->stopping)
+        if (starting && !trace_events && !baseline && bridge->operation && g_str_equal(bridge->operation, "client") && !bridge->stopping)
             return 0;
         g_application_command_line_printerr(line, "Bridge is busy with %s.\n", bridge->operation ? bridge->operation : "stop");
         return 1;
@@ -428,7 +433,7 @@ static int command_line(GApplication *app, GApplicationCommandLine *line, gpoint
         }
     }
     gint dpi = g_key_file_get_integer(config, "Bridge", "DPI", NULL);
-    gboolean map_downloads = starting && g_str_equal(prefix, managed) &&
+    gboolean map_downloads = starting && !baseline && g_str_equal(prefix, managed) &&
         g_key_file_get_boolean(config, "Bridge", "MapDownloads", NULL);
     if (map_downloads && !setup_downloads(prefix, &error))
         goto failed;
@@ -437,12 +442,13 @@ static int command_line(GApplication *app, GApplicationCommandLine *line, gpoint
     bridge->wine = g_steal_pointer(&wine);
     bridge->prefix = g_steal_pointer(&prefix);
     bridge->client = g_steal_pointer(&client);
-    bridge->dpi = starting && dpi >= 96 && dpi <= 384 ? (guint)dpi : 0;
+    bridge->dpi = starting && !baseline && dpi >= 96 && dpi <= 384 ? (guint)dpi : 0;
     bridge->downloads = map_downloads;
     bridge->korean_profile = korean_profile;
     bridge->trace_events = trace_events;
+    bridge->baseline = baseline;
     bridge->watch_attention = trace_events ||
-        (starting && g_key_file_get_boolean(config, "Bridge", "WatchAttention", NULL));
+        (starting && !baseline && g_key_file_get_boolean(config, "Bridge", "WatchAttention", NULL));
     g_application_hold(app);
     gboolean ok;
     if (installing) {
@@ -465,6 +471,8 @@ failed:
 
 int main(int argc, char **argv)
 {
+    if (argc == 2 && strcmp(argv[1], "doctor-network") == 0)
+        return bridge_check_network();
     g_autoptr(GApplication) app = g_application_new(BRIDGE_ID, G_APPLICATION_HANDLES_COMMAND_LINE);
     Bridge bridge = { .app = app };
     g_signal_connect(app, "command-line", G_CALLBACK(command_line), &bridge);

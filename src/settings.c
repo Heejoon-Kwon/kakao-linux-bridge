@@ -304,6 +304,36 @@ static void add_command(GtkWidget *box, const char *label, const char *command, 
     g_object_set_data(G_OBJECT(button), "command", (gpointer)command);
 }
 
+static GtkWidget *section(GtkWidget *parent, const char *title)
+{
+    GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 9);
+    gtk_widget_add_css_class(card, "bridge-card");
+    gtk_box_append(GTK_BOX(parent), card);
+    GtkWidget *label = gtk_label_new(title);
+    gtk_widget_add_css_class(label, "heading");
+    gtk_label_set_xalign(GTK_LABEL(label), 0);
+    gtk_box_append(GTK_BOX(card), label);
+    return card;
+}
+
+static void check_connection(GtkButton *button, gpointer data)
+{
+    (void)button;
+    Settings *settings = data;
+    g_autoptr(GError) error = NULL;
+    g_autofree char *bridge = bridge_executable(&error);
+    const char *args[] = { bridge, "doctor-network", NULL };
+    g_autoptr(GSubprocess) process = bridge ? g_subprocess_newv(
+        args, G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_MERGE, &error) : NULL;
+    if (!process) {
+        status(settings, error->message);
+        return;
+    }
+    status(settings, "Checking Ubuntu DNS…");
+    g_subprocess_communicate_utf8_async(process, NULL, NULL, integration_done,
+                                       g_object_ref(settings->window));
+}
+
 static void activate(GtkApplication *app, gpointer unused)
 {
     (void)unused;
@@ -317,17 +347,37 @@ static void activate(GtkApplication *app, gpointer unused)
     g_object_set_data_full(G_OBJECT(settings->window), "settings", settings, g_free);
     g_signal_connect(settings->window, "close-request", G_CALLBACK(cancel_image_request), settings);
     gtk_window_set_title(settings->window, "Kakao Linux Bridge");
-    gtk_window_set_default_size(settings->window, 640, -1);
+    gtk_window_set_default_size(settings->window, 690, 720);
+    GtkWidget *layout = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_window_set_child(settings->window, layout);
+    GtkWidget *scroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_vexpand(scroll, TRUE);
+    gtk_box_append(GTK_BOX(layout), scroll);
+
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
     gtk_widget_set_margin_top(box, 20);
     gtk_widget_set_margin_bottom(box, 20);
     gtk_widget_set_margin_start(box, 20);
     gtk_widget_set_margin_end(box, 20);
-    gtk_window_set_child(settings->window, box);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), box);
+    GtkWidget *connection = section(box, "Connection");
+    GtkWidget *network = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_box_append(GTK_BOX(connection), network);
+    add_button(network, "Check DNS", G_CALLBACK(check_connection), settings);
+    add_command(network, "Start without tuning", "start-baseline", settings);
+    GtkWidget *description = gtk_label_new("For error 11002, quit KakaoTalk before trying an untuned start.");
+    gtk_label_set_wrap(GTK_LABEL(description), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(description), 0);
+    gtk_widget_add_css_class(description, "dim-label");
+    gtk_box_append(GTK_BOX(connection), description);
+    GtkWidget *wine_card = section(box, "Wine setup");
+    GtkWidget *paths = gtk_expander_new("Wine paths and display scale");
+    gtk_box_append(GTK_BOX(wine_card), paths);
     GtkGrid *grid = GTK_GRID(gtk_grid_new());
     gtk_grid_set_row_spacing(grid, 8);
     gtk_grid_set_column_spacing(grid, 16);
-    gtk_box_append(GTK_BOX(box), GTK_WIDGET(grid));
+    gtk_expander_set_child(GTK_EXPANDER(paths), GTK_WIDGET(grid));
 
     g_autoptr(GError) error = NULL;
     g_autoptr(GKeyFile) config = bridge_config_load(&error);
@@ -348,54 +398,88 @@ static void activate(GtkApplication *app, gpointer unused)
     gtk_grid_attach(grid, GTK_WIDGET(s->dpi), 1, 3, 1, 1);
     s->korean_profile = GTK_CHECK_BUTTON(gtk_check_button_new_with_label("Ubuntu Korean input (IBus + X11/XWayland)"));
     gtk_check_button_set_active(s->korean_profile, g_key_file_get_boolean(config, "Bridge", BRIDGE_KOREAN_PROFILE, NULL));
-    gtk_box_append(GTK_BOX(box), GTK_WIDGET(s->korean_profile));
+    gtk_box_append(GTK_BOX(wine_card), GTK_WIDGET(s->korean_profile));
 
+    GtkWidget *preferences = section(box, "Desktop integration");
     s->downloads = GTK_CHECK_BUTTON(gtk_check_button_new_with_label("Use Ubuntu Downloads (Bridge-managed prefix)"));
     gtk_check_button_set_active(s->downloads, g_key_file_get_boolean(config, "Bridge", "MapDownloads", NULL));
-    gtk_box_append(GTK_BOX(box), GTK_WIDGET(s->downloads));
+    gtk_box_append(GTK_BOX(preferences), GTK_WIDGET(s->downloads));
     g_autofree char *autostart = bridge_autostart_path();
     s->autostart = GTK_CHECK_BUTTON(gtk_check_button_new_with_label("Start KakaoTalk at login"));
     gtk_check_button_set_active(s->autostart, g_file_test(autostart, G_FILE_TEST_EXISTS));
-    gtk_box_append(GTK_BOX(box), GTK_WIDGET(s->autostart));
+    gtk_box_append(GTK_BOX(preferences), GTK_WIDGET(s->autostart));
     s->attention = GTK_CHECK_BUTTON(gtk_check_button_new_with_label("Desktop alerts for taskbar flashes (experimental)"));
     gtk_check_button_set_active(s->attention, g_key_file_get_boolean(config, "Bridge", "WatchAttention", NULL));
-    gtk_box_append(GTK_BOX(box), GTK_WIDGET(s->attention));
+    gtk_box_append(GTK_BOX(preferences), GTK_WIDGET(s->attention));
 
-    GtkWidget *controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_box_append(GTK_BOX(box), controls);
-    add_button(controls, "Save", G_CALLBACK(save), s);
-    add_command(controls, "Start", "start", s);
-    add_command(controls, "Quit", "stop", s);
-    add_button(controls, "Install KakaoTalk…", G_CALLBACK(choose_installer), s);
-    add_command(controls, "Open Downloads", "downloads", s);
+    GtkWidget *tools = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_box_append(GTK_BOX(wine_card), tools);
+    add_button(tools, "Install KakaoTalk…", G_CALLBACK(choose_installer), s);
+    add_command(tools, "Open Downloads", "downloads", s);
 
     GtkWidget *integration = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_box_append(GTK_BOX(box), integration);
+    gtk_box_append(GTK_BOX(wine_card), integration);
     GtkWidget *separate = add_button(integration, "Use Separate KakaoTalk Window", G_CALLBACK(integrate_clicked), s);
     g_object_set_data(G_OBJECT(separate), "command", "integrate-window");
     GtkWidget *fonts = add_button(integration, "Apply Korean Font Aliases", G_CALLBACK(integrate_clicked), s);
     g_object_set_data(G_OBJECT(fonts), "command", "integrate-fonts");
 
     GtkWidget *tests = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_box_append(GTK_BOX(box), tests);
+    GtkWidget *clipboard_card = section(box, "Clipboard and notification tests");
+    gtk_box_append(GTK_BOX(clipboard_card), tests);
     add_button(tests, "Copy Test Text", G_CALLBACK(copy_text), s);
     add_button(tests, "Copy Test Image", G_CALLBACK(copy_image), s);
     add_button(tests, "Prepare Image Paste", G_CALLBACK(prepare_clipboard), s);
-    add_button(tests, "Clipboard Formats", G_CALLBACK(inspect_clipboard), s);
-    add_command(tests, "Test Notification", "test-notification", s);
+    GtkWidget *more_tests = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_box_append(GTK_BOX(clipboard_card), more_tests);
+    add_button(more_tests, "Clipboard Formats", G_CALLBACK(inspect_clipboard), s);
+    add_command(more_tests, "Test Notification", "test-notification", s);
 
     s->status = GTK_LABEL(gtk_label_new(NULL));
     gtk_label_set_wrap(s->status, TRUE);
     gtk_label_set_selectable(s->status, TRUE);
     gtk_label_set_xalign(s->status, 0);
-    gtk_box_append(GTK_BOX(box), GTK_WIDGET(s->status));
+    GtkWidget *footer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    gtk_widget_add_css_class(footer, "bridge-footer");
+    gtk_box_append(GTK_BOX(layout), footer);
+    gtk_widget_add_css_class(GTK_WIDGET(s->status), "dim-label");
+    gtk_box_append(GTK_BOX(footer), GTK_WIDGET(s->status));
+    GtkWidget *controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_box_append(GTK_BOX(footer), controls);
+    GtkWidget *quit = add_button(controls, "Quit KakaoTalk", G_CALLBACK(command_clicked), s);
+    g_object_set_data(G_OBJECT(quit), "command", "stop");
+    gtk_widget_add_css_class(quit, "bridge-quit");
+    GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(spacer, TRUE);
+    gtk_box_append(GTK_BOX(controls), spacer);
+    GtkWidget *save_button = add_button(controls, "Save", G_CALLBACK(save), s);
+    gtk_widget_add_css_class(save_button, "bridge-save");
+    GtkWidget *start = add_button(controls, "Start", G_CALLBACK(command_clicked), s);
+    g_object_set_data(G_OBJECT(start), "command", "start");
+    gtk_widget_add_css_class(start, "bridge-start");
     g_autofree char *detected_wine = bridge_find_wine(config);
     g_autofree char *detected_prefix = bridge_find_prefix(config);
     g_autofree char *detected_client = detected_prefix ? bridge_find_client(config, detected_prefix) : NULL;
     g_autofree char *detected = g_strdup_printf("Wine: %s\nPrefix: %s\nKakaoTalk: %s",
         detected_wine ? detected_wine : "missing", detected_prefix ? detected_prefix : "invalid",
         detected_client ? detected_client : "missing");
-    status(s, error ? error->message : detected);
+    GtkWidget *details = gtk_label_new(detected);
+    gtk_label_set_xalign(GTK_LABEL(details), 0);
+    gtk_label_set_wrap(GTK_LABEL(details), TRUE);
+    gtk_label_set_selectable(GTK_LABEL(details), TRUE);
+    gtk_widget_add_css_class(details, "dim-label");
+    gtk_box_append(GTK_BOX(wine_card), details);
+    status(s, error ? error->message : (detected_client && detected_wine ? "Wine and KakaoTalk detected." : "Check Wine setup."));
+    g_autoptr(GtkCssProvider) theme = gtk_css_provider_new();
+    gtk_css_provider_load_from_string(theme,
+        ".bridge-card { border: 1px solid alpha(currentColor,0.18); border-radius: 12px; padding: 14px; }"
+        ".bridge-footer { padding: 12px 20px 16px; border-top: 1px solid alpha(currentColor,0.20); }"
+        "button.bridge-start, button.bridge-save, button.bridge-quit { color: white; background-image: none; border-color: transparent; box-shadow: none; text-shadow: none; padding: 6px 17px; }"
+        "button.bridge-start { background-color: #176b49; } button.bridge-start:hover { background-color: #1b7753; }"
+        "button.bridge-save { background-color: #285da8; } button.bridge-save:hover { background-color: #306abe; }"
+        "button.bridge-quit { background-color: #9b3545; } button.bridge-quit:hover { background-color: #ac4051; }");
+    gtk_style_context_add_provider_for_display(gtk_widget_get_display(GTK_WIDGET(s->window)),
+                                               GTK_STYLE_PROVIDER(theme), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     gtk_window_present(s->window);
 }
 

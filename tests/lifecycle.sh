@@ -80,6 +80,21 @@ echo "Bridge idle CPU ticks over 2s: $((ticks_after - ticks_before))"
 wait "$supervisor"
 supervisor=
 [ "$("$bridge" status)" = idle ]
+rm "$tmp/client.pid"
+operations=$(grep -c '^reg ' "$tmp/operations")
+"$bridge" start-baseline > "$tmp/bridge.log" 2>&1 &
+supervisor=$!
+for attempt in $(seq 1 100); do
+    [ ! -f "$tmp/client.pid" ] || break
+    sleep .05
+done
+test -f "$tmp/client.pid"
+printf '%s\n' 'unset' 'unset' > "$tmp/expected-environment"
+diff -u "$tmp/expected-environment" "$tmp/client-environment"
+[ "$(grep -c '^reg ' "$tmp/operations")" = "$operations" ]
+"$bridge" stop
+wait "$supervisor"
+supervisor=
 mkdir -p "$XDG_CONFIG_HOME/autostart"
 touch "$XDG_CONFIG_HOME/autostart/io.github.KakaoLinuxBridge.desktop"
 "$bridge" disable-autostart

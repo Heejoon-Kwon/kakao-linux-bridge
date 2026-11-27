@@ -7,7 +7,7 @@
 Ubuntu 24.04 LTS amd64를 대상으로 합니다. 설치 전에 다른 카카오톡 인스턴스를 종료하세요.
 
 ```sh
-sudo apt install ./kakao-linux-bridge_0.4.0_amd64.deb
+sudo apt install ./kakao-linux-bridge_0.5.0_amd64.deb
 ```
 
 앱 목록에서 **KakaoTalk (Bridge)**를 실행합니다. Bridge는 PATH의 Wine, 환경 변수 `WINEPREFIX`, Bridge 전용 prefix 및 기본 `~/.wine`에서 환경을 찾습니다. 설정 창에서 실행 파일과 경로를 지정할 수 있습니다. 카카오톡이 없으면 **Install KakaoTalk…**에서 공식 배포처로부터 받은 로컬 설치 파일을 선택하세요. 사용자 지정 또는 기존 prefix를 사용하는 경우 전용 prefix에 설치하려면 설정의 prefix 경로를 전용 prefix로 지정하세요. `doctor`로 탐지 결과를 확인할 수 있습니다.
@@ -28,6 +28,14 @@ kakao-linux-bridge stop
 - 기본 모드는 XIM 설정을 유지하고, 설정이 없으면 IBus/Fcitx 환경 변수 또는 GNOME에 등록된 IBus 한글 입력 소스를 사용합니다. 명시적으로 **Ubuntu Korean input (IBus + X11/XWayland)**를 켜면 Bridge가 실행하는 Wine에 아래 프로필을 적용합니다.
 - **Use Ubuntu Downloads**를 사용하면 전용 prefix의 Windows 다운로드 알려진 폴더를 XDG Downloads에 연결합니다. 카카오톡에서 자체 다운로드 경로를 설정한 경우 파일 창에서 `C:\Ubuntu Downloads`를 선택하세요. 매핑을 끄면 다음 실행에서 설정 적용을 생략합니다.
 - **Start KakaoTalk at login**은 XDG 자동 시작 항목을 설정합니다.
+
+## 연결 오류 11002 LO
+
+1. 설정 창 하단의 **Quit KakaoTalk**로 카카오톡을 종료합니다. 기존 Wine 바로가기로 실행했다면 카카오톡 트레이에서 종료합니다.
+2. **Connection → Start without tuning**으로 다시 연결을 시도합니다. 이번 실행에는 Bridge의 입력기·그래픽·DPI 설정을 적용하지 않습니다. 저장된 설정과 이전 Wine 레지스트리 변경은 유지됩니다.
+3. 같은 오류가 뜨면 **Check DNS**를 실행합니다. 결과는 현재 Ubuntu에서 카카오 관련 호스트의 이름을 해석할 수 있는지 보여 줍니다. 로그인 연결 자체는 카카오톡에서 확인하세요.
+
+터미널에서도 `kakao-linux-bridge start-baseline`과 `kakao-linux-bridge doctor-network`를 사용할 수 있습니다. DNS 확인이 실패하면 다른 네트워크에서 같은 검사를 해 보면 현재 네트워크의 문제인지 좁힐 수 있습니다. [Microsoft Winsock 오류 11002](https://learn.microsoft.com/en-us/windows/win32/winsock/windows-sockets-error-codes-2) · [카카오 데브톡 PC 연결 보고](https://devtalk.kakao.com/t/pc-http/152028)
 
 ## 기존 Wine 설치에 창과 글꼴 통합 적용
 
