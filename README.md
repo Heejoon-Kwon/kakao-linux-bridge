@@ -57,6 +57,17 @@ kakao-linux-bridge stop
 
 GNOME 앱이 PNG만 클립보드에 제공하면 Wine 10의 X11 드라이버는 이를 Windows의 PNG 형식으로만 전달할 수 있습니다. 비트맵을 요청하는 Windows 앱을 위해 Wine 10 소스에 적용할 [PNG 붙여넣기 패치](patches/wine-10-png-clipboard.patch)를 제공합니다. 이 패치는 X11/XWayland에서 원본 PNG 형식을 유지하고, Windows 앱이 `CF_DIB`를 요청할 때만 비트맵을 만듭니다. 이 경로는 패치한 Wine X11 드라이버가 필요합니다.
 
+Ubuntu amd64의 **Wine 10.0~repack-12ubuntu1**에서는 저장소의 스크립트로 패치된 Wine을 개인 디렉터리에 빌드할 수 있습니다.
+
+```sh
+sudo apt install build-essential curl dpkg-dev pkg-config libpng-dev
+./scripts/build-ubuntu-wine-clipboard.sh prepare
+sudo apt-get build-dep "${XDG_DATA_HOME:-$HOME/.local/share}/kakao-linux-bridge/wine-clipboard/10.0~repack-12ubuntu1/wine_10.0~repack-12ubuntu1.dsc"
+./scripts/build-ubuntu-wine-clipboard.sh build
+```
+
+마지막 단계는 Ubuntu Wine 전체를 컴파일하므로 시간이 걸립니다. 카카오톡과 해당 prefix의 다른 Wine 앱을 종료하고, 스크립트 끝에 표시되는 `wine-kakao` 경로를 **Bridge Settings → Wine setup → Wine paths → Wine executable**에 입력해 **Save → Start**를 누르세요. 시스템 Wine을 다시 쓰려면 이 필드를 비우고 저장한 뒤 재시작하면 됩니다.
+
 Wine 10.0을 별도로 빌드하는 환경에서는 Wine 소스 최상위에서 `patch -p1 < /경로/wine-10-png-clipboard.patch`를 실행한 뒤 평소의 Wine 빌드 절차로 컴파일합니다. X11 개발 의존성과 `libpng-dev`가 있어야 합니다. Bridge의 **Wine executable**에 별도로 설치한 Wine 실행 파일을 지정할 수 있습니다.
 
 ## Ubuntu GNOME의 한글 입력 프로필
