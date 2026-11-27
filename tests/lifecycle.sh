@@ -71,12 +71,18 @@ grep -F 'C:\Ubuntu Downloads' "$tmp/operations"
 gdbus call --session --dest io.github.KakaoLinuxBridge --object-path /StatusNotifierItem \
     --method org.freedesktop.DBus.Properties.Get org.kde.StatusNotifierItem IconName |
     grep -F io.github.KakaoLinuxBridge
+gdbus call --session --dest io.github.KakaoLinuxBridge --object-path /StatusNotifierItem \
+    --method org.freedesktop.DBus.Properties.Get org.kde.StatusNotifierItem Menu |
+    grep -F /BridgeMenu
+gdbus call --session --dest io.github.KakaoLinuxBridge --object-path /BridgeMenu \
+    --method com.canonical.dbusmenu.GetLayout -- 0 -1 '[]' | grep -F 'Quit KakaoTalk'
 awk '/^(Pss|Rss):/{print}' "/proc/$supervisor/smaps_rollup"
 ticks_before=$(awk '{print $14+$15}' "/proc/$supervisor/stat")
 sleep 2
 ticks_after=$(awk '{print $14+$15}' "/proc/$supervisor/stat")
 echo "Bridge idle CPU ticks over 2s: $((ticks_after - ticks_before))"
-"$bridge" stop
+gdbus call --session --dest io.github.KakaoLinuxBridge --object-path /BridgeMenu \
+    --method com.canonical.dbusmenu.Event 3 clicked '<0>' 0
 wait "$supervisor"
 supervisor=
 [ "$("$bridge" status)" = idle ]

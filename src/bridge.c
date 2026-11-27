@@ -3,6 +3,7 @@
 #include "attention.h"
 #include "prefix-integration.h"
 #include "wine-tuning.h"
+#include "tray-menu.h"
 #include <glib-unix.h>
 #include <glib/gstdio.h>
 #include <errno.h>
@@ -32,6 +33,7 @@ typedef struct {
     const char *operation;
     guint tray_object;
     guint tray_watch;
+    guint tray_menu;
 } Bridge;
 
 static const char *tray_xml =
@@ -41,6 +43,7 @@ static const char *tray_xml =
     "<property name='Title' type='s' access='read'/>"
     "<property name='Status' type='s' access='read'/>"
     "<property name='IconName' type='s' access='read'/>"
+    "<property name='Menu' type='o' access='read'/>"
     "<property name='ItemIsMenu' type='b' access='read'/>"
     "<method name='Activate'><arg type='i' direction='in'/><arg type='i' direction='in'/></method>"
     "<method name='SecondaryActivate'><arg type='i' direction='in'/><arg type='i' direction='in'/></method>"
@@ -72,9 +75,10 @@ static GVariant *tray_property(GDBusConnection *connection, const char *sender,
     (void)connection; (void)sender; (void)path; (void)interface; (void)error; (void)data;
     if (g_str_equal(property, "Category")) return g_variant_new_string("Communications");
     if (g_str_equal(property, "Id")) return g_variant_new_string(BRIDGE_EXE);
-    if (g_str_equal(property, "Title")) return g_variant_new_string("KakaoTalk");
+    if (g_str_equal(property, "Title")) return g_variant_new_string("KakaoTalk (Bridge)");
     if (g_str_equal(property, "Status")) return g_variant_new_string("Active");
     if (g_str_equal(property, "IconName")) return g_variant_new_string(BRIDGE_ID);
+    if (g_str_equal(property, "Menu")) return g_variant_new_object_path(BRIDGE_MENU_PATH);
     if (g_str_equal(property, "ItemIsMenu")) return g_variant_new_boolean(FALSE);
     return NULL;
 }
@@ -100,6 +104,21 @@ static void tray_watcher(GDBusConnection *bus, const char *name, const char *own
                            NULL, G_DBUS_CALL_FLAGS_NO_AUTO_START, 3000, NULL, NULL, NULL);
 }
 
+static gboolean request_stop(Bridge *bridge, GError **error);
+
+static void menu_activate(gint id, gpointer data)
+{
+    g_autoptr(GError) error = NULL;
+    if (id == 1)
+        open_settings(&error);
+    else if (id == 2)
+        open_downloads(&error);
+    else
+        request_stop(data, &error);
+    if (error)
+        g_printerr("%s\n", error->message);
+}
+
 static void tray_start(Bridge *bridge)
 {
     static const GDBusInterfaceVTable vtable = {
@@ -108,6 +127,8 @@ static void tray_start(Bridge *bridge)
     GDBusConnection *bus = g_application_get_dbus_connection(bridge->app);
     if (!bus)
         return;
+    bridge->tray_menu = bridge_menu_export(bus, menu_activate, bridge);
+    if (!bridge->tray_menu) return;
     g_autoptr(GDBusNodeInfo) info = g_dbus_node_info_new_for_xml(tray_xml, NULL);
     bridge->tray_object = g_dbus_connection_register_object(bus, "/StatusNotifierItem",
                                                            info->interfaces[0], &vtable,
@@ -173,7 +194,9 @@ static void clear_session(Bridge *bridge)
         g_bus_unwatch_name(bridge->tray_watch);
     if (bridge->tray_object)
         g_dbus_connection_unregister_object(bus, bridge->tray_object);
-    bridge->tray_watch = bridge->tray_object = 0;
+    if (bridge->tray_menu)
+        g_dbus_connection_unregister_object(bus, bridge->tray_menu);
+    bridge->tray_watch = bridge->tray_object = bridge->tray_menu = 0;
     g_clear_pointer(&bridge->attention, bridge_attention_free);
     g_clear_object(&bridge->child);
     g_clear_pointer(&bridge->wine, g_free);
@@ -367,8 +390,10 @@ static int command_line(GApplication *app, GApplicationCommandLine *line, gpoint
         return 2;
     }
     if (!doctor && (bridge->child || bridge->stop_pending)) {
-        if (starting && !trace_events && !baseline && bridge->operation && g_str_equal(bridge->operation, "client") && !bridge->stopping)
+        if (starting && !trace_events && !baseline && bridge->operation && g_str_equal(bridge->operation, "client") && !bridge->stopping) {
+            g_application_command_line_print(line, "KakaoTalk is already running. Open settings with " BRIDGE_EXE " settings.\n");
             return 0;
+        }
         g_application_command_line_printerr(line, "Bridge is busy with %s.\n", bridge->operation ? bridge->operation : "stop");
         return 1;
     }
@@ -392,6 +417,23 @@ static int command_line(GApplication *app, GApplicationCommandLine *line, gpoint
             tuning.xim ? tuning.xim : "desktop default",
             tuning.korean_locale_available ? "installed" : "missing",
             tuning.ibus_hangul_available ? "installed" : "not found");
+        const char *id = bridge->child ? g_subprocess_get_identifier(bridge->child) : NULL;
+        if (id && g_strcmp0(bridge->operation, "client") == 0) {
+            if (g_strcmp0(wine, bridge->wine) != 0)
+                g_application_command_line_print(line, "Running Wine launcher: %s\n", bridge->wine);
+            g_autofree char *maps_path = g_build_filename("/proc", id, "maps", NULL);
+            g_autofree char *maps = NULL;
+            if (g_file_get_contents(maps_path, &maps, NULL, NULL)) {
+                g_auto(GStrv) entries = g_strsplit(maps, "\n", -1);
+                for (guint i = 0; entries[i]; i++) {
+                    const char *mapped = strchr(entries[i], '/');
+                    if (mapped && g_str_has_suffix(mapped, "/winex11.so")) {
+                        g_application_command_line_print(line, "Running X11 driver: %s\n", mapped);
+                        break;
+                    }
+                }
+            }
+        }
         return wine && prefix && client ? 0 : 1;
     }
     if (!g_application_get_dbus_connection(app)) {
@@ -460,8 +502,11 @@ static int command_line(GApplication *app, GApplicationCommandLine *line, gpoint
     } else {
         ok = advance(bridge, &error);
     }
-    if (ok)
+    if (ok) {
+        if (starting && !trace_events)
+            g_application_command_line_print(line, "KakaoTalk start requested. Settings: " BRIDGE_EXE " settings\n");
         return 0;
+    }
     clear_session(bridge);
 
 failed:

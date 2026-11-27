@@ -7,7 +7,7 @@
 Ubuntu 24.04 LTS amd64를 대상으로 합니다. 설치 전에 다른 카카오톡 인스턴스를 종료하세요.
 
 ```sh
-sudo apt install ./kakao-linux-bridge_0.6.0_amd64.deb
+sudo apt install ./kakao-linux-bridge_0.6.1_amd64.deb
 ```
 
 앱 목록에서 **KakaoTalk (Bridge)**를 실행합니다. Bridge는 PATH의 Wine, 환경 변수 `WINEPREFIX`, Bridge 전용 prefix 및 기본 `~/.wine`에서 환경을 찾습니다. 설정 창에서 실행 파일과 경로를 지정할 수 있습니다. 카카오톡이 없으면 **Install KakaoTalk…**에서 공식 배포처로부터 받은 로컬 설치 파일을 선택하세요. 사용자 지정 또는 기존 prefix를 사용하는 경우 전용 prefix에 설치하려면 설정의 prefix 경로를 전용 prefix로 지정하세요. `doctor`로 탐지 결과를 확인할 수 있습니다.
@@ -20,7 +20,7 @@ kakao-linux-bridge status
 kakao-linux-bridge stop
 ```
 
-`stop`은 동일 Wine prefix의 카카오톡에 정상 종료를 요청합니다. 다른 Windows 프로그램과 동시에 사용하는 경우 그 프로그램은 계속 실행됩니다. 트레이는 StatusNotifierItem 호스트가 있는 환경에서 표시되며 기본 클릭은 설정을 엽니다. 트레이가 없는 GNOME 환경에서는 앱 목록의 설정 및 종료 메뉴를 사용하세요. 표시 위치는 데스크톱 알림 서비스가 결정합니다.
+`stop`은 동일 Wine prefix의 카카오톡에 정상 종료를 요청합니다. 다른 Windows 프로그램과 동시에 사용하는 경우 그 프로그램은 계속 실행됩니다. 트레이는 StatusNotifierItem 호스트가 있는 환경에서 표시되며 기본 클릭은 설정을 엽니다. 트레이가 없는 GNOME 환경에서는 앱 목록의 설정 및 종료 메뉴를 사용하세요. Bridge의 **KakaoTalk (Bridge)** 트레이 아이콘에는 GNOME이 아이콘 위치에 직접 그리는 메뉴가 있습니다. Wine 자체 트레이 아이콘도 사용하는 환경에서는 두 아이콘이 보일 수 있습니다. `kakao-linux-bridge start`는 카카오톡을 실행하고, 설정은 `kakao-linux-bridge settings`로 엽니다. 알림 배너의 위치는 데스크톱 알림 서비스가 결정합니다.
 
 ## 화면과 파일 설정
 
@@ -64,7 +64,11 @@ git pull --ff-only
 ./scripts/install-ubuntu-wine-clipboard.sh
 ```
 
-이 스크립트는 설치 버전과 드라이버 체크섬을 검사하고, 현재 Wine 파일을 사용자 데이터 디렉터리에 복사합니다. 복제 공간이 필요하며 시스템 Wine이나 APT 패키지는 바꾸지 않습니다. 카카오톡과 해당 prefix의 다른 Wine 앱을 종료한 뒤 출력된 `wine-kakao` 경로를 **Bridge Settings → Wine setup → Wine paths → Wine executable**에 넣고 **Save → Start**를 누르세요. X11/XWayland 세션이 필요합니다. 기존 Wine으로 돌아가려면 이 필드를 비우고 저장한 뒤 재시작하세요.
+이 스크립트는 설치 버전과 드라이버 체크섬을 검사하고, 기존 Wine 파일 대부분을 링크로 재사용합니다. 로더, 서버, 패치된 드라이버 등 추가 파일과 링크가 쓰는 공간은 테스트 환경에서 약 9 MiB였습니다. 시스템 Wine이나 APT 패키지는 바꾸지 않습니다. 카카오톡과 해당 prefix의 다른 Wine 앱을 종료한 뒤 출력된 `wine-kakao` 경로를 **Bridge Settings → Wine setup → Wine paths → Wine executable**에 넣고 **Save → Start**를 누르세요. X11/XWayland 세션이 필요합니다. 기존 Wine으로 돌아가려면 이 필드를 비우고 저장한 뒤 재시작하세요.
+
+이전 설치기가 만든 `installed-…` 폴더가 있으면 설치기가 경로를 출력합니다. 새 `linked-…/wine-kakao`로 정상 실행되는 것을 확인하고 Wine 앱을 모두 종료한 후 그 이전 실행기 폴더만 제거할 수 있습니다. `.wine`이나 카카오톡 데이터 폴더는 그대로 두세요.
+
+Bridge 실행 중 `kakao-linux-bridge doctor`의 **Running X11 driver**가 `linked-…/…/winex11.so`를 가리키는지 확인할 수 있습니다. 다른 Wine 앱이 같은 prefix를 먼저 열었다면 클립보드를 맡는 Wine Explorer가 이전 드라이버를 계속 쓸 수 있으므로 해당 prefix의 앱을 모두 종료한 뒤 Bridge로 실행하세요.
 
 전체 Ubuntu 패키지를 재현하려면 `scripts/build-ubuntu-wine-clipboard.sh`를 사용하세요. 이 방식은 빌드 환경에 배포 패키지가 요구하는 버전의 Unicode 데이터를 포함한 의존성이 있어야 합니다.
 

@@ -24,7 +24,11 @@ mkdir -p "$base"
 exec 9>"$base/install.lock"
 flock 9
 digest=$(cut -c1-12 "$artifact/SHA256SUMS")
-runtime="$base/installed-$digest"
+runtime="$base/linked-$digest"
+old="$base/installed-$digest"
+if [ -d "$old" ]; then
+    printf 'Previous full Wine copy still exists: %s\n' "$old"
+fi
 if [ -x "$runtime/wine-kakao" ]; then
     cmp "$artifact/winex11.so" "$runtime/$wine_dir/x86_64-unix/winex11.so"
     "$runtime/wine-kakao" --version
@@ -33,8 +37,12 @@ if [ -x "$runtime/wine-kakao" ]; then
 fi
 stage=$(mktemp -d "$base/staging.XXXXXX")
 mkdir -p "$stage/$wine_dir" "$stage/$data_dir"
-cp -a --reflink=auto "/$wine_dir/." "$stage/$wine_dir/"
-cp -a --reflink=auto "/$data_dir/." "$stage/$data_dir/"
+cp -as "/$wine_dir/." "$stage/$wine_dir/"
+cp -as "/$data_dir/." "$stage/$data_dir/"
+# Wine derives its search paths from the actual loader, server, and ntdll locations.
+for file in wine wineserver x86_64-unix/ntdll.so; do
+    cp -L --remove-destination "/$wine_dir/$file" "$stage/$wine_dir/$file"
+done
 # Some packaged wineserver builds also look below share/wine/wine.
 if [ ! -e "$stage/$data_dir/wine/nls" ]; then
     mkdir -p "$stage/$data_dir/wine"
@@ -47,6 +55,12 @@ test -f "$stage/$wine_dir/i386-windows/ntdll.dll"
 cat > "$stage/wine-kakao" <<'WRAPPER'
 #!/bin/sh
 set -eu
+for package in wine64:amd64 libwine:amd64; do
+    if [ "$(dpkg-query -W -f='${Status} ${Version}' "$package" 2>/dev/null || :)" != "install ok installed 10.0~repack-12ubuntu1" ]; then
+        echo "The patched Wine launcher is incompatible with the installed package version." >&2
+        exit 1
+    fi
+done
 base=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 wine_dir="$base/usr/lib/x86_64-linux-gnu/wine"
 if [ "${1:-}" != --version ]; then
@@ -64,4 +78,5 @@ WRAPPER
 chmod 0755 "$stage/wine-kakao"
 "$stage/wine-kakao" --version
 mv -T -- "$stage" "$runtime"
+du -sh "$runtime"
 printf '\nBridge Settings → Wine executable:\n%s/wine-kakao\n' "$runtime"
