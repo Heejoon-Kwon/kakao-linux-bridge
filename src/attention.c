@@ -10,6 +10,7 @@ struct BridgeAttention {
     xcb_atom_t attention;
     xcb_atom_t pid_atom;
     guint32 pid;
+    gboolean trace;
     char *window_class;
     guint source;
     gint64 last_notification;
@@ -62,7 +63,14 @@ static gboolean handle_events(gint fd, GIOCondition condition, gpointer data)
     xcb_generic_event_t *event;
     while ((event = xcb_poll_for_event(watch->connection))) {
         g_autofree xcb_generic_event_t *owned = event;
-        if ((event->response_type & 0x7f) != XCB_CLIENT_MESSAGE)
+        guint8 type = event->response_type & 0x7f;
+        if (watch->trace && type == XCB_MAP_NOTIFY) {
+            const xcb_map_notify_event_t *mapped = (const void *)event;
+            if (is_client(watch, mapped->window))
+                g_printerr("KakaoTalk X11 event: window mapped (override redirect: %s)\n",
+                           mapped->override_redirect ? "yes" : "no");
+        }
+        if (type != XCB_CLIENT_MESSAGE)
             continue;
 
         const xcb_client_message_event_t *message = (const void *)event;
@@ -75,6 +83,8 @@ static gboolean handle_events(gint fd, GIOCondition condition, gpointer data)
             continue;
 
         watch->last_notification = now;
+        if (watch->trace)
+            g_printerr("KakaoTalk X11 event: taskbar attention requested\n");
         watch->callback(watch->data);
     }
 
@@ -85,7 +95,7 @@ static gboolean handle_events(gint fd, GIOCondition condition, gpointer data)
     return G_SOURCE_CONTINUE;
 }
 
-BridgeAttention *bridge_attention_watch(guint32 pid, const char *window_class,
+BridgeAttention *bridge_attention_watch(guint32 pid, const char *window_class, gboolean trace,
                                         BridgeAttentionFunc callback, gpointer data,
                                         GError **error)
 {
@@ -123,6 +133,7 @@ BridgeAttention *bridge_attention_watch(guint32 pid, const char *window_class,
     }
 
     watch->pid = pid;
+    watch->trace = trace;
     watch->window_class = g_strdup(window_class);
     watch->callback = callback;
     watch->data = data;

@@ -7,10 +7,10 @@
 Ubuntu 24.04 LTS amd64를 대상으로 합니다. 설치 전에 다른 카카오톡 인스턴스를 종료하세요.
 
 ```sh
-sudo apt install ./kakao-linux-bridge_0.3.0_amd64.deb
+sudo apt install ./kakao-linux-bridge_0.4.0_amd64.deb
 ```
 
-앱 목록에서 **KakaoTalk**을 실행합니다. Bridge는 PATH의 Wine, 환경 변수 `WINEPREFIX`, Bridge 전용 prefix 및 기본 `~/.wine`에서 환경을 찾습니다. 설정 창에서 실행 파일과 경로를 지정할 수 있습니다. 카카오톡이 없으면 **Install KakaoTalk…**에서 공식 배포처로부터 받은 로컬 설치 파일을 선택하세요. 사용자 지정 또는 기존 prefix를 사용하는 경우 전용 prefix에 설치하려면 설정의 prefix 경로를 전용 prefix로 지정하세요. `doctor`로 탐지 결과를 확인할 수 있습니다.
+앱 목록에서 **KakaoTalk (Bridge)**를 실행합니다. Bridge는 PATH의 Wine, 환경 변수 `WINEPREFIX`, Bridge 전용 prefix 및 기본 `~/.wine`에서 환경을 찾습니다. 설정 창에서 실행 파일과 경로를 지정할 수 있습니다. 카카오톡이 없으면 **Install KakaoTalk…**에서 공식 배포처로부터 받은 로컬 설치 파일을 선택하세요. 사용자 지정 또는 기존 prefix를 사용하는 경우 전용 prefix에 설치하려면 설정의 prefix 경로를 전용 prefix로 지정하세요. `doctor`로 탐지 결과를 확인할 수 있습니다.
 
 ```sh
 kakao-linux-bridge doctor
@@ -28,6 +28,20 @@ kakao-linux-bridge stop
 - 기본 모드는 XIM 설정을 유지하고, 설정이 없으면 IBus/Fcitx 환경 변수 또는 GNOME에 등록된 IBus 한글 입력 소스를 사용합니다. 명시적으로 **Ubuntu Korean input (IBus + X11/XWayland)**를 켜면 Bridge가 실행하는 Wine에 아래 프로필을 적용합니다.
 - **Use Ubuntu Downloads**를 사용하면 전용 prefix의 Windows 다운로드 알려진 폴더를 XDG Downloads에 연결합니다. 카카오톡에서 자체 다운로드 경로를 설정한 경우 파일 창에서 `C:\Ubuntu Downloads`를 선택하세요. 매핑을 끄면 다음 실행에서 설정 적용을 생략합니다.
 - **Start KakaoTalk at login**은 XDG 자동 시작 항목을 설정합니다.
+
+## 기존 Wine 설치에 창과 글꼴 통합 적용
+
+카카오톡과 같은 Wine prefix에서 실행 중인 다른 Windows 앱을 먼저 종료하세요. Bridge Settings에서 다음 항목을 각각 적용할 수 있습니다.
+
+1. **Use Separate KakaoTalk Window**는 Wine 가상 데스크톱 지정값을 제거하고 X11 창 관리자가 카카오톡 창을 직접 관리하도록 설정합니다. Wine 가상 데스크톱을 사용하던 다른 앱도 같은 prefix를 공유하면 영향을 받을 수 있습니다.
+2. **Apply Korean Font Aliases**는 설치된 나눔고딕 또는 Noto Sans CJK KR을 Wine의 누락된 굴림·돋움·바탕·맑은 고딕 글꼴 이름에 연결합니다. Wine에서 이미 해당 이름의 글꼴을 찾으면 그 글꼴을 우선합니다. 입력 조합은 아래 IBus 프로필에서 별도로 설정합니다.
+3. **KakaoTalk (Bridge)**를 실행합니다. 같은 prefix의 Wine 데스크톱이 이미 실행 중이었다면, 그 prefix의 모든 Windows 앱을 닫고 Wine 세션이 끝난 뒤 다시 실행하세요.
+
+터미널에서는 `kakao-linux-bridge integrate-window`와 `kakao-linux-bridge integrate-fonts`를 실행할 수 있습니다. 각 작업은 변경 전에 `HKCU\Software\Wine`을 XDG 상태 디렉터리의 별도 `before.reg` 파일에 저장하고 경로를 출력합니다. 이전 값을 복원하려면 해당 prefix에서 Wine Regedit의 가져오기 기능으로 그 파일을 여세요. 가져오기는 기존 값을 되돌리며 백업 이후 추가된 값은 별도로 제거해야 합니다. [Wine 가상 데스크톱 설정](https://github.com/wine-mirror/wine/blob/wine-10.0/dlls/win32u/winstation.c) · [Wine 글꼴 대체 동작](https://github.com/wine-mirror/wine/blob/wine-10.0/dlls/win32u/font.c)
+
+## 이미지 붙여넣기
+
+일반 복사·붙여넣기는 Wine과 데스크톱의 클립보드 연동을 사용합니다. 이미지가 붙지 않으면 복사한 뒤 Bridge Settings의 **Prepare Image Paste**를 누르고 붙여넣을 때까지 설정 창을 열어 두세요. 현재 이미지에 PNG와 BMP를 제공하고, BMP는 다른 앱이 요청할 때 생성합니다. 이 기능은 양방향에서 사용할 수 있으며, 클립보드에 이미지 데이터가 있는 경우에 적용됩니다.
 
 ## Ubuntu GNOME의 한글 입력 프로필
 
@@ -48,6 +62,8 @@ kakao-linux-bridge stop
 Bridge는 Wine의 X11 드라이버가 보내는 작업 표시줄 점멸 이벤트를 구독합니다. Bridge가 실행한 카카오톡의 PID와 창 클래스가 일치하면 **카카오톡에서 확인할 항목이 있습니다.**를 데스크톱에 보냅니다. 이 이벤트는 메시지 수신 외에도 발생할 수 있으며, 점멸 요청을 만들지 않는 메시지는 감지할 수 없습니다. 메시지 본문과 발신자를 수집하지 않습니다. Wine이 X11 또는 XWayland를 사용하는 환경에서 동작하는 실험 기능으로 기본값은 꺼짐입니다. GNOME에서는 알림 배너가 화면 상단에 표시되며 시스템 알림 설정이 적용됩니다. [Wine 9.0 X11 드라이버](https://github.com/wine-mirror/wine/blob/wine-9.0/dlls/winex11.drv/window.c) · [GNOME 알림](https://help.gnome.org/gnome-help/shell-overview.html)
 
 Wine 없이 알림만 받으려면 Android 휴대폰의 KDE Connect를 Ubuntu GNOME의 GSConnect에 페어링하고 휴대폰에서 알림 접근 권한을 준 뒤, 알림 동기화의 앱 목록에서 카카오톡을 활성화할 수 있습니다. 휴대폰이 생성한 알림을 전달하는 방식입니다. [KDE Connect](https://kdeconnect.kde.org/) · [GSConnect](https://github.com/GSConnect/gnome-shell-extension-gsconnect)
+
+알림이 안 뜨는 경우 카카오톡을 먼저 종료한 뒤 `kakao-linux-bridge trace-events`로 실행하고, 창을 최소화한 상태에서 다른 계정으로 메시지를 보내 보세요. 터미널에 창 표시와 작업 표시줄 점멸 이벤트만 출력됩니다. 이 진단은 메시지·창 제목을 수집하지 않습니다.
 
 ## 검증 범위
 
@@ -71,7 +87,7 @@ sudo apt remove kakao-linux-bridge
 ## 빌드 및 성능 검증
 
 ```sh
-sudo apt install build-essential cmake pkg-config libglib2.0-dev libgtk-4-dev libxcb1-dev dbus xvfb
+sudo apt install build-essential cmake pkg-config libglib2.0-dev libgtk-4-dev libxcb1-dev dbus xvfb xclip
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build -V
@@ -91,3 +107,5 @@ tests/sample-resources.sh idle 10 PID1 PID2
 Debian 13 amd64에서 가짜 Wine으로 클라이언트 실행 및 종료를 재현했습니다. 유휴 상태의 Bridge는 RSS 4,476 KiB, PSS 3,589 KiB였으며 2초 동안 CPU 틱 증가가 없었습니다. Xvfb에서 실행한 GTK4 설정 창은 한 시점에 RSS 69,364 KiB, PSS 58,487 KiB였고, 창을 닫자 프로세스가 종료됐습니다. 이 값은 가짜 Wine과 Xvfb를 사용한 측정값입니다. Ubuntu에서 실제 카카오톡을 사용한 상주 PSS 비교와 장시간 측정은 아직 필요합니다.
 
 0.2.0에서 알림 감시를 켠 상태의 Xvfb 재현 테스트는 유휴 RSS 4,756 KiB, PSS 2,388 KiB였고 2초 동안 CPU 틱 증가가 없었습니다. 공유 페이지의 배분이 달라지는 개별 테스트이므로 앞선 측정치와 직접 비교할 수 없습니다.
+
+0.4.0은 Debian의 Xvfb에서 실제 Wine 10.0과 Win32 테스트 앱으로 확인했습니다. Wine Desktop 안에 뜨던 테스트 앱이 창 통합 적용 후 별도 창으로 떴고, Windows의 `CF_DIB`와 Linux의 `image/bmp` 사이에서 양방향으로 이미지가 전달됐습니다. 굴림 글꼴 이름으로 한글 글리프를 읽었고, Win32 `FlashWindowEx` 호출에서 Bridge가 D-Bus 알림을 보냈습니다. 실제 카카오톡 메시지 수신 및 채팅창의 입력 조합과 붙여넣기는 별도로 확인해야 합니다.

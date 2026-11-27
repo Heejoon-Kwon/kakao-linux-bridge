@@ -1,5 +1,6 @@
 #include "config.h"
 #include "wine-tuning.h"
+#include "image-clipboard.h"
 #include <gtk/gtk.h>
 
 typedef struct {
@@ -13,6 +14,7 @@ typedef struct {
     GtkCheckButton *attention;
     GtkCheckButton *korean_profile;
     GtkLabel *status;
+    GCancellable *image_request;
 } Settings;
 
 static void status(Settings *settings, const char *text)
@@ -64,21 +66,77 @@ static void save(GtkButton *button, gpointer data)
     status(settings, "Saved. Changes apply at the next KakaoTalk start.");
 }
 
+static char *bridge_executable(GError **error)
+{
+    g_autofree char *self = g_file_read_link("/proc/self/exe", error);
+    if (!self)
+        return NULL;
+    g_autofree char *dir = g_path_get_dirname(self);
+    return g_build_filename(dir, BRIDGE_EXE, NULL);
+}
+
 static void run_command(Settings *settings, const char *command, const char *file)
 {
     g_autoptr(GError) error = NULL;
-    g_autofree char *self = g_file_read_link("/proc/self/exe", &error);
-    if (!self) {
-        status(settings, error->message);
-        return;
-    }
-    g_autofree char *dir = g_path_get_dirname(self);
-    g_autofree char *bridge = g_build_filename(dir, BRIDGE_EXE, NULL);
+    g_autofree char *bridge = bridge_executable(&error);
     const char *args[] = { bridge, command, file, NULL };
-    if (!g_spawn_async(NULL, (char **)args, NULL, 0, NULL, NULL, NULL, &error))
+    if (!bridge || !g_spawn_async(NULL, (char **)args, NULL, 0, NULL, NULL, NULL, &error))
         status(settings, error->message);
     else
         status(settings, "Request sent.");
+}
+
+static void integration_done(GObject *object, GAsyncResult *result, gpointer data)
+{
+    g_autoptr(GtkWindow) window = data;
+    g_autoptr(GError) error = NULL;
+    g_autofree char *output = NULL;
+    if (g_subprocess_communicate_utf8_finish(G_SUBPROCESS(object), result, &output, NULL, &error) &&
+        output && *output) {
+        g_strchomp(output);
+    }
+    Settings *settings = g_object_get_data(G_OBJECT(window), "settings");
+    if (gtk_widget_get_visible(GTK_WIDGET(window)))
+        status(settings, error ? error->message : (output && *output ? output : "No Wine integration output."));
+}
+
+static void integration_confirmed(GObject *object, GAsyncResult *result, gpointer data)
+{
+    g_autoptr(GtkWindow) window = data;
+    if (gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(object), result, NULL) != 1)
+        return;
+
+    Settings *settings = g_object_get_data(G_OBJECT(window), "settings");
+    g_autoptr(GError) error = NULL;
+    g_autofree char *bridge = bridge_executable(&error);
+    const char *command = g_object_get_data(object, "command");
+    const char *args[] = { bridge, command, NULL };
+    g_autoptr(GSubprocess) process = bridge ? g_subprocess_newv(
+        args, G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_MERGE, &error) : NULL;
+    if (!process) {
+        status(settings, error->message);
+        return;
+    }
+    status(settings, "Applying Wine settings…");
+    g_subprocess_communicate_utf8_async(process, NULL, NULL, integration_done, g_object_ref(window));
+}
+
+static void integrate_clicked(GtkButton *button, gpointer data)
+{
+    Settings *settings = data;
+    const char *command = g_object_get_data(G_OBJECT(button), "command");
+    gboolean fonts = g_str_equal(command, "integrate-fonts");
+    g_autoptr(GtkAlertDialog) dialog = gtk_alert_dialog_new(
+        "%s", fonts ? "Apply Korean font aliases?" : "Open KakaoTalk as a separate window?");
+    gtk_alert_dialog_set_detail(dialog,
+        "Quit KakaoTalk and other Wine apps in the selected prefix first. This updates the prefix and saves a registry backup.");
+    const char *buttons[] = { "Cancel", "Apply", NULL };
+    gtk_alert_dialog_set_buttons(dialog, buttons);
+    gtk_alert_dialog_set_cancel_button(dialog, 0);
+    gtk_alert_dialog_set_default_button(dialog, 0);
+    g_object_set_data(G_OBJECT(dialog), "command", (gpointer)command);
+    gtk_alert_dialog_choose(dialog, settings->window, NULL, integration_confirmed,
+                            g_object_ref(settings->window));
 }
 
 static void command_clicked(GtkButton *button, gpointer data)
@@ -143,8 +201,72 @@ static void copy_image(GtkButton *button, gpointer data)
     };
     g_autoptr(GBytes) bytes = g_bytes_new_static(pixels, sizeof pixels);
     g_autoptr(GdkTexture) image = gdk_memory_texture_new(2, 2, GDK_MEMORY_R8G8B8A8, bytes, 8);
-    gdk_clipboard_set_texture(clipboard(data), image);
+    bridge_clipboard_offer_image(clipboard(data), image);
     status(data, "Test image copied. Paste it in KakaoTalk.");
+}
+
+typedef struct {
+    GtkWindow *window;
+    GCancellable *cancellable;
+    gulong changed;
+} ImageRequest;
+
+static void image_clipboard_changed(GdkClipboard *clipboard, gpointer data)
+{
+    (void)clipboard;
+    ImageRequest *request = data;
+    g_cancellable_cancel(request->cancellable);
+}
+
+static void image_read(GObject *object, GAsyncResult *result, gpointer data)
+{
+    GdkClipboard *clipboard = GDK_CLIPBOARD(object);
+    ImageRequest *request = data;
+    GtkWindow *window = request->window;
+    Settings *settings = g_object_get_data(G_OBJECT(window), "settings");
+    g_signal_handler_disconnect(clipboard, request->changed);
+    g_autoptr(GError) error = NULL;
+    g_autoptr(GdkTexture) image = gdk_clipboard_read_texture_finish(clipboard, result, &error);
+    if (settings->image_request == request->cancellable) {
+        g_clear_object(&settings->image_request);
+        if (gtk_widget_get_visible(GTK_WIDGET(window))) {
+            if (g_cancellable_is_cancelled(request->cancellable))
+                status(settings, "Clipboard contents changed. Try again with the new image.");
+            else if (!image)
+                status(settings, "Copy an image in Ubuntu or KakaoTalk first.");
+            else {
+                bridge_clipboard_offer_image(clipboard, image);
+                status(settings, "Image ready in PNG and BMP. Keep this window open while pasting.");
+            }
+        }
+    }
+    g_object_unref(request->cancellable);
+    g_object_unref(window);
+    g_free(request);
+}
+
+static void prepare_clipboard(GtkButton *button, gpointer data)
+{
+    (void)button;
+    Settings *settings = data;
+    if (settings->image_request)
+        return;
+    GdkClipboard *source = clipboard(settings);
+    settings->image_request = g_cancellable_new();
+    ImageRequest *request = g_new(ImageRequest, 1);
+    request->window = g_object_ref(settings->window);
+    request->cancellable = g_object_ref(settings->image_request);
+    request->changed = g_signal_connect(source, "changed", G_CALLBACK(image_clipboard_changed), request);
+    gdk_clipboard_read_texture_async(source, request->cancellable, image_read, request);
+}
+
+static gboolean cancel_image_request(GtkWindow *window, gpointer data)
+{
+    (void)window;
+    Settings *settings = data;
+    if (settings->image_request)
+        g_cancellable_cancel(settings->image_request);
+    return FALSE;
 }
 
 static void inspect_clipboard(GtkButton *button, gpointer data)
@@ -193,6 +315,7 @@ static void activate(GtkApplication *app, gpointer unused)
     Settings *settings = g_new0(Settings, 1);
     settings->window = GTK_WINDOW(gtk_application_window_new(app));
     g_object_set_data_full(G_OBJECT(settings->window), "settings", settings, g_free);
+    g_signal_connect(settings->window, "close-request", G_CALLBACK(cancel_image_request), settings);
     gtk_window_set_title(settings->window, "Kakao Linux Bridge");
     gtk_window_set_default_size(settings->window, 640, -1);
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
@@ -246,10 +369,18 @@ static void activate(GtkApplication *app, gpointer unused)
     add_button(controls, "Install KakaoTalk…", G_CALLBACK(choose_installer), s);
     add_command(controls, "Open Downloads", "downloads", s);
 
+    GtkWidget *integration = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_box_append(GTK_BOX(box), integration);
+    GtkWidget *separate = add_button(integration, "Use Separate KakaoTalk Window", G_CALLBACK(integrate_clicked), s);
+    g_object_set_data(G_OBJECT(separate), "command", "integrate-window");
+    GtkWidget *fonts = add_button(integration, "Apply Korean Font Aliases", G_CALLBACK(integrate_clicked), s);
+    g_object_set_data(G_OBJECT(fonts), "command", "integrate-fonts");
+
     GtkWidget *tests = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_box_append(GTK_BOX(box), tests);
     add_button(tests, "Copy Test Text", G_CALLBACK(copy_text), s);
     add_button(tests, "Copy Test Image", G_CALLBACK(copy_image), s);
+    add_button(tests, "Prepare Image Paste", G_CALLBACK(prepare_clipboard), s);
     add_button(tests, "Clipboard Formats", G_CALLBACK(inspect_clipboard), s);
     add_command(tests, "Test Notification", "test-notification", s);
 

@@ -1,11 +1,12 @@
 [Desktop Entry]
 Type=Application
-Name=KakaoTalk
+Name=KakaoTalk (Bridge)
 Comment=Run official KakaoTalk with Kakao Linux Bridge
 Exec=kakao-linux-bridge start
 TryExec=kakao-linux-bridge
 Icon=io.github.KakaoLinuxBridge
 Terminal=false
+StartupWMClass=kakaotalk.exe
 Categories=Network;InstantMessaging;
 Actions=Settings;Quit;
 

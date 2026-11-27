@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "config.h"
 #include "attention.h"
+#include "prefix-integration.h"
 #include "wine-tuning.h"
 #include <glib-unix.h>
 #include <glib/gstdio.h>
@@ -18,6 +19,7 @@ typedef struct {
     guint dpi;
     gboolean downloads;
     gboolean watch_attention;
+    gboolean trace_events;
     gboolean korean_profile;
     BridgeAttention *attention;
     gboolean stopping;
@@ -240,7 +242,7 @@ static gboolean advance(Bridge *bridge, GError **error)
         if (pid > 0 && pid <= G_MAXUINT32) {
             g_autoptr(GError) attention_error = NULL;
             g_autofree char *name = g_path_get_basename(bridge->client);
-            bridge->attention = bridge_attention_watch((guint32)pid, name, notify_attention,
+            bridge->attention = bridge_attention_watch((guint32)pid, name, bridge->trace_events, notify_attention,
                                                        bridge, &attention_error);
             if (!bridge->attention)
                 g_printerr("KakaoTalk attention notifications: %s\n", attention_error->message);
@@ -320,7 +322,7 @@ static int command_line(GApplication *app, GApplicationCommandLine *line, gpoint
     g_autofree char *installer = NULL;
     if (g_str_equal(command, "--help") || g_str_equal(command, "help")) {
         g_application_command_line_print(line, "Usage: " BRIDGE_EXE
-            " [start|stop|status|doctor|settings|downloads|test-notification|install-client FILE|repair|disable-autostart]\n");
+            " [start|trace-events|stop|status|doctor|settings|downloads|test-notification|install-client FILE|repair|integrate-window|integrate-fonts|disable-autostart]\n");
         return 0;
     }
     if (g_str_equal(command, "status")) {
@@ -348,16 +350,19 @@ static int command_line(GApplication *app, GApplicationCommandLine *line, gpoint
         goto failed;
     }
 
-    gboolean starting = g_str_equal(command, "start") && argc <= 2;
+    gboolean trace_events = g_str_equal(command, "trace-events") && argc == 2;
+    gboolean starting = trace_events || (g_str_equal(command, "start") && argc <= 2);
     gboolean installing = g_str_equal(command, "install-client") && argc == 3;
     gboolean repairing = g_str_equal(command, "repair") && argc == 2;
     gboolean doctor = g_str_equal(command, "doctor") && argc == 2;
-    if (!starting && !installing && !repairing && !doctor) {
+    gboolean integrate_fonts = g_str_equal(command, "integrate-fonts") && argc == 2;
+    gboolean integrate = integrate_fonts || (g_str_equal(command, "integrate-window") && argc == 2);
+    if (!starting && !installing && !repairing && !doctor && !integrate) {
         g_application_command_line_printerr(line, "Invalid command. See " BRIDGE_EXE " --help.\n");
         return 2;
     }
     if (!doctor && (bridge->child || bridge->stop_pending)) {
-        if (starting && bridge->operation && g_str_equal(bridge->operation, "client") && !bridge->stopping)
+        if (starting && !trace_events && bridge->operation && g_str_equal(bridge->operation, "client") && !bridge->stopping)
             return 0;
         g_application_command_line_printerr(line, "Bridge is busy with %s.\n", bridge->operation ? bridge->operation : "stop");
         return 1;
@@ -388,11 +393,21 @@ static int command_line(GApplication *app, GApplicationCommandLine *line, gpoint
         g_application_command_line_printerr(line, "A desktop D-Bus session is required.\n");
         return 1;
     }
-    if (!wine || !prefix || (starting && !client)) {
+    if (!wine || !prefix || ((starting || integrate) && !client)) {
         g_application_command_line_printerr(line, "Wine or KakaoTalk is missing. Run doctor or open Bridge Settings.\n");
         if (starting && !g_application_command_line_get_is_remote(line))
             open_settings(NULL);
         return 1;
+    }
+    if (integrate) {
+        g_autofree char *backup = NULL;
+        gboolean applied = bridge_integrate_prefix(wine, prefix, client, integrate_fonts, &backup, &error);
+        if (backup)
+            g_application_command_line_print(line, "Wine settings backup: %s\n", backup);
+        if (!applied)
+            goto failed;
+        g_application_command_line_print(line, "Applied to %s. Restart KakaoTalk after other Wine apps in this prefix have closed.\n", prefix);
+        return 0;
     }
     if (installing || repairing) {
         if (!g_str_equal(prefix, managed)) {
@@ -425,7 +440,9 @@ static int command_line(GApplication *app, GApplicationCommandLine *line, gpoint
     bridge->dpi = starting && dpi >= 96 && dpi <= 384 ? (guint)dpi : 0;
     bridge->downloads = map_downloads;
     bridge->korean_profile = korean_profile;
-    bridge->watch_attention = starting && g_key_file_get_boolean(config, "Bridge", "WatchAttention", NULL);
+    bridge->trace_events = trace_events;
+    bridge->watch_attention = trace_events ||
+        (starting && g_key_file_get_boolean(config, "Bridge", "WatchAttention", NULL));
     g_application_hold(app);
     gboolean ok;
     if (installing) {
